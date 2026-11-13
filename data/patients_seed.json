@@ -1,0 +1,653 @@
+[
+  {
+    "patient_code": "P0001",
+    "display_name": "Lê Thị Thảo",
+    "age": 26,
+    "sex": "male",
+    "height_cm": 171.3,
+    "weight_kg": 60.8,
+    "activity_level": "sedentary",
+    "conditions": [
+      "t2d"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Không ăn cay",
+    "days": 3,
+    "group": "single_t2d"
+  },
+  {
+    "patient_code": "P0002",
+    "display_name": "Nguyễn Hoàng Thảo",
+    "age": 30,
+    "sex": "male",
+    "height_cm": 157.7,
+    "weight_kg": 70.2,
+    "activity_level": "active",
+    "conditions": [
+      "t2d"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Ít dầu mỡ",
+    "days": 5,
+    "group": "single_t2d"
+  },
+  {
+    "patient_code": "P0003",
+    "display_name": "Phan Ngọc Khanh",
+    "age": 25,
+    "sex": "female",
+    "height_cm": 171.7,
+    "weight_kg": 57.7,
+    "activity_level": "light",
+    "conditions": [
+      "t2d"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Ít dầu mỡ",
+    "days": 5,
+    "group": "single_t2d"
+  },
+  {
+    "patient_code": "P0004",
+    "display_name": "Huỳnh Thanh Bình",
+    "age": 30,
+    "sex": "male",
+    "height_cm": 161.9,
+    "weight_kg": 64.9,
+    "activity_level": "active",
+    "conditions": [
+      "htn"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "",
+    "days": 5,
+    "group": "single_htn"
+  },
+  {
+    "patient_code": "P0005",
+    "display_name": "Huỳnh Hoàng Chi",
+    "age": 60,
+    "sex": "male",
+    "height_cm": 159.6,
+    "weight_kg": 74.6,
+    "activity_level": "sedentary",
+    "conditions": [
+      "htn"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Ít dầu mỡ",
+    "days": 5,
+    "group": "single_htn"
+  },
+  {
+    "patient_code": "P0006",
+    "display_name": "Vũ Ngọc Giang",
+    "age": 39,
+    "sex": "male",
+    "height_cm": 174.5,
+    "weight_kg": 65.7,
+    "activity_level": "moderate",
+    "conditions": [
+      "htn"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Ưa món luộc",
+    "days": 3,
+    "group": "single_htn"
+  },
+  {
+    "patient_code": "P0007",
+    "display_name": "Đặng Minh Thảo",
+    "age": 69,
+    "sex": "female",
+    "height_cm": 176.4,
+    "weight_kg": 75.3,
+    "activity_level": "light",
+    "conditions": [
+      "gout"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Ít dầu mỡ",
+    "days": 5,
+    "group": "single_gout"
+  },
+  {
+    "patient_code": "P0008",
+    "display_name": "Võ Hoàng Linh",
+    "age": 42,
+    "sex": "female",
+    "height_cm": 177.7,
+    "weight_kg": 75.0,
+    "activity_level": "sedentary",
+    "conditions": [
+      "gout"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Ít dầu mỡ",
+    "days": 3,
+    "group": "single_gout"
+  },
+  {
+    "patient_code": "P0009",
+    "display_name": "Đặng Ngọc Hà",
+    "age": 50,
+    "sex": "female",
+    "height_cm": 159.0,
+    "weight_kg": 59.6,
+    "activity_level": "active",
+    "conditions": [
+      "gout"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Không ăn cay",
+    "days": 7,
+    "group": "single_gout"
+  },
+  {
+    "patient_code": "P0010",
+    "display_name": "Võ Thanh Trang",
+    "age": 34,
+    "sex": "female",
+    "height_cm": 158.9,
+    "weight_kg": 87.0,
+    "activity_level": "active",
+    "conditions": [
+      "obesity"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Không ăn cay",
+    "days": 5,
+    "group": "single_obesity"
+  },
+  {
+    "patient_code": "P0011",
+    "display_name": "Trần Minh Giang",
+    "age": 57,
+    "sex": "male",
+    "height_cm": 164.8,
+    "weight_kg": 90.8,
+    "activity_level": "active",
+    "conditions": [
+      "obesity"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "",
+    "days": 5,
+    "group": "single_obesity"
+  },
+  {
+    "patient_code": "P0012",
+    "display_name": "Nguyễn Thị Thảo",
+    "age": 58,
+    "sex": "female",
+    "height_cm": 158.5,
+    "weight_kg": 88.8,
+    "activity_level": "moderate",
+    "conditions": [
+      "obesity"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Ưa món luộc",
+    "days": 3,
+    "group": "single_obesity"
+  },
+  {
+    "patient_code": "P0013",
+    "display_name": "Hoàng Minh Quân",
+    "age": 54,
+    "sex": "male",
+    "height_cm": 152.1,
+    "weight_kg": 78.0,
+    "activity_level": "sedentary",
+    "conditions": [
+      "t2d",
+      "htn"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Ưa món luộc",
+    "days": 7,
+    "group": "multi"
+  },
+  {
+    "patient_code": "P0014",
+    "display_name": "Võ Văn Tuấn",
+    "age": 34,
+    "sex": "male",
+    "height_cm": 161.7,
+    "weight_kg": 82.5,
+    "activity_level": "moderate",
+    "conditions": [
+      "t2d",
+      "obesity"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Không ăn cay",
+    "days": 3,
+    "group": "multi"
+  },
+  {
+    "patient_code": "P0015",
+    "display_name": "Đặng Thị Chi",
+    "age": 44,
+    "sex": "female",
+    "height_cm": 158.2,
+    "weight_kg": 96.8,
+    "activity_level": "active",
+    "conditions": [
+      "htn",
+      "obesity"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "",
+    "days": 7,
+    "group": "multi"
+  },
+  {
+    "patient_code": "P0016",
+    "display_name": "Hoàng Quốc Hà",
+    "age": 67,
+    "sex": "male",
+    "height_cm": 164.4,
+    "weight_kg": 71.8,
+    "activity_level": "very_active",
+    "conditions": [
+      "gout",
+      "htn"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Ít dầu mỡ",
+    "days": 7,
+    "group": "multi"
+  },
+  {
+    "patient_code": "P0017",
+    "display_name": "Vũ Anh Dũng",
+    "age": 50,
+    "sex": "female",
+    "height_cm": 177.9,
+    "weight_kg": 75.4,
+    "activity_level": "light",
+    "conditions": [
+      "t2d",
+      "gout"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Ít dầu mỡ",
+    "days": 3,
+    "group": "multi"
+  },
+  {
+    "patient_code": "P0018",
+    "display_name": "Phạm Văn Chi",
+    "age": 26,
+    "sex": "female",
+    "height_cm": 167.3,
+    "weight_kg": 99.9,
+    "activity_level": "sedentary",
+    "conditions": [
+      "htn",
+      "gout",
+      "obesity"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Ít dầu mỡ",
+    "days": 3,
+    "group": "multi"
+  },
+  {
+    "patient_code": "P0019",
+    "display_name": "Vũ Hoàng Thảo",
+    "age": 29,
+    "sex": "female",
+    "height_cm": 165.4,
+    "weight_kg": 97.3,
+    "activity_level": "light",
+    "conditions": [
+      "t2d",
+      "htn",
+      "obesity"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Không ăn cay",
+    "days": 3,
+    "group": "multi"
+  },
+  {
+    "patient_code": "P0020",
+    "display_name": "Huỳnh Quốc Nam",
+    "age": 37,
+    "sex": "female",
+    "height_cm": 154.5,
+    "weight_kg": 94.4,
+    "activity_level": "active",
+    "conditions": [
+      "gout",
+      "obesity"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "",
+    "days": 7,
+    "group": "multi"
+  },
+  {
+    "patient_code": "P0021",
+    "display_name": "Trần Hoàng Hà",
+    "age": 28,
+    "sex": "male",
+    "height_cm": 162.5,
+    "weight_kg": 64.2,
+    "activity_level": "light",
+    "conditions": [
+      "obesity"
+    ],
+    "allergens": [
+      "seafood"
+    ],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Không ăn cay",
+    "days": 3,
+    "group": "allergen"
+  },
+  {
+    "patient_code": "P0022",
+    "display_name": "Trần Anh Thảo",
+    "age": 42,
+    "sex": "male",
+    "height_cm": 164.0,
+    "weight_kg": 83.5,
+    "activity_level": "sedentary",
+    "conditions": [
+      "t2d"
+    ],
+    "allergens": [
+      "peanut"
+    ],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "",
+    "days": 7,
+    "group": "allergen"
+  },
+  {
+    "patient_code": "P0023",
+    "display_name": "Phạm Quốc Bình",
+    "age": 40,
+    "sex": "male",
+    "height_cm": 156.3,
+    "weight_kg": 69.5,
+    "activity_level": "light",
+    "conditions": [
+      "obesity"
+    ],
+    "allergens": [
+      "milk"
+    ],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Không ăn cay",
+    "days": 3,
+    "group": "allergen"
+  },
+  {
+    "patient_code": "P0024",
+    "display_name": "Võ Anh Em",
+    "age": 54,
+    "sex": "female",
+    "height_cm": 159.4,
+    "weight_kg": 77.1,
+    "activity_level": "light",
+    "conditions": [
+      "t2d"
+    ],
+    "allergens": [
+      "egg"
+    ],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Ưa món luộc",
+    "days": 3,
+    "group": "allergen"
+  },
+  {
+    "patient_code": "P0025",
+    "display_name": "Vũ Minh Bình",
+    "age": 72,
+    "sex": "male",
+    "height_cm": 160.2,
+    "weight_kg": 53.8,
+    "activity_level": "very_active",
+    "conditions": [
+      "t2d"
+    ],
+    "allergens": [
+      "gluten"
+    ],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "",
+    "days": 3,
+    "group": "allergen"
+  },
+  {
+    "patient_code": "P0026",
+    "display_name": "Phạm Quốc Dũng",
+    "age": 29,
+    "sex": "female",
+    "height_cm": 167.5,
+    "weight_kg": 76.3,
+    "activity_level": "very_active",
+    "conditions": [
+      "t2d"
+    ],
+    "allergens": [],
+    "pregnancy": true,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Ít dầu mỡ",
+    "days": 7,
+    "group": "RISK_PREG"
+  },
+  {
+    "patient_code": "P0027",
+    "display_name": "Phan Ngọc Khanh",
+    "age": 31,
+    "sex": "female",
+    "height_cm": 167.5,
+    "weight_kg": 74.3,
+    "activity_level": "light",
+    "conditions": [
+      "htn"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": true,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Ưa món luộc",
+    "days": 3,
+    "group": "RISK_LACT"
+  },
+  {
+    "patient_code": "P0028",
+    "display_name": "Hoàng Anh Linh",
+    "age": 14,
+    "sex": "male",
+    "height_cm": 158.9,
+    "weight_kg": 56.7,
+    "activity_level": "sedentary",
+    "conditions": [
+      "obesity"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "",
+    "days": 5,
+    "group": "RISK_MINOR"
+  },
+  {
+    "patient_code": "P0029",
+    "display_name": "Trần Thị Thảo",
+    "age": 62,
+    "sex": "male",
+    "height_cm": 168.2,
+    "weight_kg": 72.3,
+    "activity_level": "light",
+    "conditions": [
+      "htn",
+      "t2d"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 4,
+    "dialysis": false,
+    "eating_disorder": false,
+    "preferences_text": "Ưa món luộc",
+    "days": 3,
+    "group": "RISK_CKD"
+  },
+  {
+    "patient_code": "P0030",
+    "display_name": "Phạm Ngọc Lan",
+    "age": 24,
+    "sex": "female",
+    "height_cm": 176.3,
+    "weight_kg": 83.7,
+    "activity_level": "light",
+    "conditions": [
+      "obesity"
+    ],
+    "allergens": [],
+    "pregnancy": false,
+    "lactating": false,
+    "ckd_stage": 0,
+    "dialysis": false,
+    "eating_disorder": true,
+    "preferences_text": "Không ăn cay",
+    "days": 7,
+    "group": "RISK_ED"
+  }
+]
