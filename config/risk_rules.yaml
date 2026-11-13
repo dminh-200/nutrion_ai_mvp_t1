@@ -1,0 +1,41 @@
+version: 1
+thresholds:
+  minor_age: 18
+  ckd_stage_min: 4
+  bmi_low:
+    value: 16
+    source: ""
+    status: TODO_VERIFY
+
+rules:
+  RISK_PREG:
+    message_vi: "Nhu cầu dinh dưỡng khi mang thai cần bác sĩ sản khoa hoặc chuyên gia dinh dưỡng tư vấn trực tiếp."
+    keywords:
+      - "mang thai"
+      - "có thai"
+      - "bầu"
+      - "thai kỳ"
+  RISK_LACT:
+    message_vi: "Giai đoạn cho con bú cần được tư vấn trực tiếp."
+    keywords:
+      - "cho con bú"
+      - "đang cho bú"
+      - "nuôi con bằng sữa mẹ"
+  RISK_MINOR:
+    message_vi: "Hệ thống chỉ hỗ trợ người từ 18 tuổi."
+    keywords: []
+  RISK_CKD:
+    message_vi: "Bệnh thận giai đoạn muộn cần chế độ ăn do bác sĩ chỉ định."
+    keywords:
+      - "lọc máu"
+      - "chạy thận"
+      - "suy thận"
+  RISK_ED:
+    message_vi: "Vui lòng trao đổi với bác sĩ hoặc chuyên gia tâm lý – dinh dưỡng."
+    keywords:
+      - "biếng ăn"
+      - "rối loạn ăn uống"
+      - "nôn ói sau ăn"
+  RISK_BMI_LOW:
+    message_vi: "Chỉ số cơ thể rất thấp, cần thăm khám trực tiếp."
+    keywords: []
