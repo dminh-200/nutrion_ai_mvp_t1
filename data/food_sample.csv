@@ -1,0 +1,41 @@
+code,name_vi,food_group,unit_default_g,kcal,protein_g,fat_g,carb_g,fiber_g,sugar_g,sodium_mg,sat_fat_g,purine_level,allergen_tags,tags,source
+F001,Cơm gạo tẻ,ngu_coc,150,130,2.7,0.3,28.2,0.4,0.1,1,0.1,low,,tinh_bot,SAMPLE_DATA
+F002,Cơm gạo lứt,ngu_coc,150,111,2.6,0.9,23.0,1.8,0.4,5,0.2,low,,ngu_coc_nguyen_hat,SAMPLE_DATA
+F003,Yến mạch cán dẹt,ngu_coc,50,389,16.9,6.9,66.3,10.6,0.0,2,1.2,low,gluten,ngu_coc_nguyen_hat,SAMPLE_DATA
+F004,Bánh mì nguyên cám,ngu_coc,60,247,13.0,3.4,41.0,6.0,4.3,400,0.7,low,gluten,ngu_coc_nguyen_hat,SAMPLE_DATA
+F005,Khoai lang luộc,ngu_coc,150,86,1.6,0.1,20.1,3.0,4.2,55,0.0,low,,tinh_bot,SAMPLE_DATA
+F006,Bún tươi,ngu_coc,150,110,1.7,0.2,25.0,0.5,0.0,15,0.0,low,,tinh_bot,SAMPLE_DATA
+F007,Ức gà luộc không da,thit_ca,100,165,31.0,3.6,0.0,0.0,0.0,74,1.0,medium,,dam_nac,SAMPLE_DATA
+F008,Cá hồi áp chảo,thit_ca,100,208,20.4,13.4,0.0,0.0,0.0,59,3.1,medium,seafood,dam_nac|omega3,SAMPLE_DATA
+F009,Cá thu kho nhạt,thit_ca,100,189,19.0,12.0,0.0,0.0,0.0,90,3.0,medium,seafood,dam_nac,SAMPLE_DATA
+F010,Tôm hấp,thit_ca,100,99,24.0,0.3,0.2,0.0,0.0,111,0.1,medium,seafood,dam_nac,SAMPLE_DATA
+F011,Thịt thăn lợn luộc,thit_ca,100,143,26.0,3.5,0.0,0.0,0.0,62,1.2,medium,,dam_nac,SAMPLE_DATA
+F012,Thịt bò nạc xào,thit_ca,100,180,26.0,8.0,0.0,0.0,0.0,65,3.2,medium,,dam_nac,SAMPLE_DATA
+F013,Gan lợn luộc,thit_ca,100,134,21.0,4.0,2.5,0.0,0.0,70,1.3,high,,noi_tang,SAMPLE_DATA
+F014,Cá mòi hộp,thit_ca,100,208,24.6,11.5,0.0,0.0,0.0,307,1.5,high,seafood,che_bien_san,SAMPLE_DATA
+F015,Xúc xích tiệt trùng,thit_ca,50,290,12.0,25.0,4.0,0.0,1.5,850,9.0,medium,soy,che_bien_san,SAMPLE_DATA
+F016,Trứng gà luộc,trung_sua,60,155,12.6,10.6,1.1,0.0,1.1,124,3.3,low,egg,dam_nac,SAMPLE_DATA
+F017,Sữa tươi không đường,trung_sua,200,60,3.2,3.3,4.7,0.0,4.7,44,2.1,low,milk,canxi,SAMPLE_DATA
+F018,Sữa chua không đường,trung_sua,100,61,3.5,3.3,4.7,0.0,4.7,46,2.1,low,milk,canxi,SAMPLE_DATA
+F019,Đậu phụ trắng,dau_hat,100,76,8.1,4.8,1.9,0.3,0.6,7,0.7,low,soy,dam_thuc_vat,SAMPLE_DATA
+F020,Sữa đậu nành không đường,dau_hat,200,33,2.9,1.6,1.8,0.4,0.4,15,0.2,low,soy,dam_thuc_vat,SAMPLE_DATA
+F021,Đậu phộng rang,dau_hat,30,567,25.8,49.2,16.1,8.5,4.7,18,6.8,low,peanut,chat_beo_tot,SAMPLE_DATA
+F022,Hạt chia,dau_hat,15,486,16.5,30.7,42.1,34.4,0.0,16,3.3,low,,chat_xo,SAMPLE_DATA
+F023,Rau muống luộc,rau_cu,150,25,2.6,0.2,3.1,2.1,0.0,30,0.0,low,,rau,SAMPLE_DATA
+F024,Cải bó xôi luộc,rau_cu,150,23,2.9,0.4,3.6,2.2,0.4,79,0.1,low,,rau,SAMPLE_DATA
+F025,Bông cải xanh hấp,rau_cu,150,34,2.8,0.4,6.6,2.6,1.7,33,0.1,low,,rau,SAMPLE_DATA
+F026,Cà chua sống,rau_cu,100,18,0.9,0.2,3.9,1.2,2.6,5,0.0,low,,rau,SAMPLE_DATA
+F027,Dưa chuột,rau_cu,100,15,0.7,0.1,3.6,0.5,1.7,2,0.0,low,,rau,SAMPLE_DATA
+F028,Bí đỏ hấp,rau_cu,150,26,1.0,0.1,6.5,0.5,2.8,1,0.0,low,,rau,SAMPLE_DATA
+F029,Cà rốt luộc,rau_cu,100,35,0.8,0.2,8.2,3.0,3.5,58,0.0,low,,rau,SAMPLE_DATA
+F030,Mướp đắng xào,rau_cu,150,34,1.0,1.5,4.3,2.0,1.0,10,0.2,low,,rau,SAMPLE_DATA
+F031,Dưa cải muối chua,rau_cu,50,19,1.2,0.2,3.8,2.0,1.2,1200,0.0,low,,do_muoi,SAMPLE_DATA
+F032,Ổi tươi,trai_cay,150,68,2.6,1.0,14.3,5.4,8.9,2,0.3,low,,trai_cay,SAMPLE_DATA
+F033,Táo ta,trai_cay,150,52,0.3,0.2,13.8,2.4,10.4,1,0.0,low,,trai_cay,SAMPLE_DATA
+F034,Bưởi,trai_cay,150,38,0.8,0.0,9.5,1.0,7.0,0,0.0,low,,trai_cay,SAMPLE_DATA
+F035,Chuối tiêu,trai_cay,100,89,1.1,0.3,22.8,2.6,12.2,1,0.1,low,,trai_cay,SAMPLE_DATA
+F036,Thanh long,trai_cay,150,50,1.1,0.4,11.0,3.0,7.5,2,0.0,low,,trai_cay,SAMPLE_DATA
+F037,Nước ngọt có ga,do_uong,250,42,0.0,0.0,10.6,0.0,10.6,10,0.0,low,,nuoc_ngot|do_ngot,SAMPLE_DATA
+F038,Bánh quy bơ,ngu_coc,40,460,6.0,18.0,68.0,1.5,22.0,320,10.0,low,gluten|milk|egg,do_ngot,SAMPLE_DATA
+F039,Bia lon,do_uong,330,43,0.5,0.0,3.6,0.0,0.0,4,0.0,high,,bia_ruou,SAMPLE_DATA
+F040,Dầu ô liu,dau_hat,10,884,0.0,100.0,0.0,0.0,0.0,2,13.8,low,,chat_beo_tot,SAMPLE_DATA
