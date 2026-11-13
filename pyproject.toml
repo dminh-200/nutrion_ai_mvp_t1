@@ -1,0 +1,18 @@
+[project]
+name = "nutrition-ai-mvp"
+version = "0.1.0"
+description = "MVP hệ thống AI hỗ trợ phân loại nhu cầu dinh dưỡng và xây dựng khẩu phần ăn"
+requires-python = ">=3.12,<3.13"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: đánh dấu test cần tải mô hình embedding lớn hoặc chạy lâu",
+]
