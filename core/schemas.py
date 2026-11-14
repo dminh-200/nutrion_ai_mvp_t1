@@ -66,8 +66,8 @@ class RiskResult(BaseModel):
 class PlannedItem(BaseModel):
     """Một món ăn được LLM chọn trong bữa."""
 
-    food_id: int = Field(..., gt=0)
-    grams: float = Field(..., ge=10.0, le=400.0)
+    food_id: int = Field(..., ge=1)
+    grams: float = Field(..., ge=0.0)
 
 
 class Meal(BaseModel):

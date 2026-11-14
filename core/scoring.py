@@ -36,13 +36,13 @@ def score_menu(
                     )
                 food = food_map[item.food_id]
                 ratio = item.grams / 100.0
-                kcal = round(float(food["kcal"]) * ratio, 1)
-                protein_g = round(float(food["protein_g"]) * ratio, 1)
-                fat_g = round(float(food["fat_g"]) * ratio, 1)
-                carb_g = round(float(food["carb_g"]) * ratio, 1)
-                fiber_g = round(float(food.get("fiber_g", 0.0)) * ratio, 1)
-                sugar_g = round(float(food.get("sugar_g", 0.0)) * ratio, 1)
-                sodium_mg = round(float(food.get("sodium_mg", 0.0)) * ratio, 1)
+                kcal = round(float(food.get("kcal") or 0.0) * ratio, 1)
+                protein_g = round(float(food.get("protein_g") or 0.0) * ratio, 1)
+                fat_g = round(float(food.get("fat_g") or 0.0) * ratio, 1)
+                carb_g = round(float(food.get("carb_g") or 0.0) * ratio, 1)
+                fiber_g = round(float(food.get("fiber_g") or 0.0) * ratio, 1)
+                sugar_g = round(float(food.get("sugar_g") or 0.0) * ratio, 1)
+                sodium_mg = round(float(food.get("sodium_mg") or 0.0) * ratio, 1)
 
                 scored_items.append(
                     ScoredItem(

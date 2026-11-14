@@ -4,12 +4,14 @@ import json
 from typing import Any
 from uuid import uuid4
 
+import httpx
+from google.genai import errors as genai_errors
 from langgraph.types import interrupt
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 from unidecode import unidecode
 
-from agent.llm import call_explain_llm, call_planner_llm
+from agent.llm import LLMConfigError, call_explain_llm, call_planner_llm
 from agent.state import AgentState
 from agent.tools_gateway import ToolsGateway
 from agent.verifier import verify_meal_plan
@@ -24,7 +26,17 @@ from core.schemas import (
     PatientProfile,
     PlannedItem,
 )
-from db.models import HealthProfile, MealPlan, MealPlanItem, Patient
+from db.init_db import ALLERGENS, CONDITIONS
+from db.models import (
+    Allergen,
+    Condition,
+    HealthProfile,
+    MealPlan,
+    MealPlanItem,
+    Patient,
+    ProfileAllergen,
+    ProfileCondition,
+)
 from db.repo import (
     create_meal_plan,
     create_query_log,
@@ -92,8 +104,49 @@ def _diversify_foods(candidates: list[dict[str, Any]], limit: int = 120) -> list
     return diversified
 
 
+def _health_profile_matches(
+    session: Session, hp: HealthProfile, profile: PatientProfile
+) -> bool:
+    """Kiểm tra bản ghi HealthProfile hiện có trùng khớp chỉ số, bệnh và dị ứng hay không."""
+    scalar_match = (
+        hp.age == profile.age
+        and hp.sex == profile.sex
+        and abs(hp.height_cm - profile.height_cm) < 1e-6
+        and abs(hp.weight_kg - profile.weight_kg) < 1e-6
+        and hp.activity_level == profile.activity_level
+        and hp.pregnancy == profile.pregnancy
+        and hp.lactating == profile.lactating
+        and hp.ckd_stage == profile.ckd_stage
+        and hp.dialysis == profile.dialysis
+        and hp.eating_disorder == profile.eating_disorder
+        and hp.preferences_text == profile.preferences_text
+        and hp.days == profile.days
+    )
+    if not scalar_match:
+        return False
+
+    db_conditions = set(
+        session.scalars(
+            select(Condition.code)
+            .join(ProfileCondition, Condition.id == ProfileCondition.condition_id)
+            .where(ProfileCondition.profile_id == hp.id)
+        ).all()
+    )
+    if db_conditions != set(profile.conditions):
+        return False
+
+    db_allergens = set(
+        session.scalars(
+            select(Allergen.code)
+            .join(ProfileAllergen, Allergen.id == ProfileAllergen.allergen_id)
+            .where(ProfileAllergen.profile_id == hp.id)
+        ).all()
+    )
+    return db_allergens == set(profile.allergens)
+
+
 def _get_or_create_health_profile(session: Session, profile: PatientProfile) -> HealthProfile:
-    """Tìm hoặc tạo mới Patient + HealthProfile tương ứng với profile.patient_code."""
+    """Tìm hoặc tạo mới Patient + HealthProfile (kèm bệnh, dị ứng) khi chỉ số hồ sơ thay đổi."""
     patient = session.scalar(select(Patient).where(Patient.code == profile.patient_code))
     if patient is None:
         patient = Patient(
@@ -109,25 +162,49 @@ def _get_or_create_health_profile(session: Session, profile: PatientProfile) -> 
         .where(HealthProfile.patient_id == patient.id)
         .order_by(HealthProfile.id.desc())
     )
-    if hp is None:
-        hp = HealthProfile(
-            patient_id=patient.id,
-            age=profile.age,
-            sex=profile.sex,
-            height_cm=profile.height_cm,
-            weight_kg=profile.weight_kg,
-            activity_level=profile.activity_level,
-            pregnancy=profile.pregnancy,
-            lactating=profile.lactating,
-            ckd_stage=profile.ckd_stage,
-            dialysis=profile.dialysis,
-            eating_disorder=profile.eating_disorder,
-            preferences_text=profile.preferences_text,
-            days=profile.days,
-        )
-        session.add(hp)
-        session.flush()
-    return hp
+    if hp is not None and _health_profile_matches(session, hp, profile):
+        return hp
+
+    new_hp = HealthProfile(
+        patient_id=patient.id,
+        age=profile.age,
+        sex=profile.sex,
+        height_cm=profile.height_cm,
+        weight_kg=profile.weight_kg,
+        activity_level=profile.activity_level,
+        pregnancy=profile.pregnancy,
+        lactating=profile.lactating,
+        ckd_stage=profile.ckd_stage,
+        dialysis=profile.dialysis,
+        eating_disorder=profile.eating_disorder,
+        preferences_text=profile.preferences_text,
+        days=profile.days,
+    )
+    session.add(new_hp)
+    session.flush()
+
+    cond_defaults = dict(CONDITIONS)
+    cond_map = {c.code: c.id for c in session.scalars(select(Condition)).all()}
+    for c_code in dict.fromkeys(profile.conditions):
+        if c_code not in cond_map:
+            row = Condition(code=c_code, name_vi=cond_defaults.get(c_code, c_code))
+            session.add(row)
+            session.flush()
+            cond_map[c_code] = row.id
+        session.add(ProfileCondition(profile_id=new_hp.id, condition_id=cond_map[c_code]))
+
+    alg_defaults = dict(ALLERGENS)
+    alg_map = {a.code: a.id for a in session.scalars(select(Allergen)).all()}
+    for a_code in dict.fromkeys(profile.allergens):
+        if a_code not in alg_map:
+            row_a = Allergen(code=a_code, name_vi=alg_defaults.get(a_code, a_code))
+            session.add(row_a)
+            session.flush()
+            alg_map[a_code] = row_a.id
+        session.add(ProfileAllergen(profile_id=new_hp.id, allergen_id=alg_map[a_code]))
+
+    session.flush()
+    return new_hp
 
 
 def _save_plan_items(
@@ -448,12 +525,27 @@ def plan(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
     else:
         force_violation = False
 
-    plan_llm, usage = call_planner_llm(
-        days=profile.days,
-        allowed_foods=allowed_foods,
-        targets=targets,
-        force_violation=force_violation,
-    )
+    error_notice = ""
+    try:
+        plan_llm, usage = call_planner_llm(
+            days=profile.days,
+            allowed_foods=allowed_foods,
+            targets=targets,
+            profile=profile,
+            needs=needs,
+            violations=prev_violations,
+            force_violation=force_violation,
+        )
+    except (
+        LLMConfigError,
+        genai_errors.APIError,
+        TimeoutError,
+        ConnectionError,
+        httpx.HTTPError,
+    ) as exc:
+        error_notice = str(exc)
+        plan_llm = MealPlanLLM(days=[], cannot_plan=True, reason=error_notice)
+        usage = {"tokens_in": 0, "tokens_out": 0}
 
     metrics = dict(state.get("metrics") or {})
     metrics["llm_calls"] = int(metrics.get("llm_calls", 0)) + 1
@@ -474,6 +566,8 @@ def plan(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
     }
     if plan_llm.cannot_plan:
         out["status"] = "needs_human_review"
+        if error_notice:
+            out["explanation_md"] = f"**Thông báo cấu hình/mô hình:** {error_notice}{DISCLAIMER_VI}"
     return out
 
 
@@ -505,6 +599,8 @@ def verify(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
         profile=profile,
         targets=targets,
         gateway=gateway,
+        needs=state.get("needs"),
+        allowed_foods=state.get("allowed_foods"),
     )
 
     trace_notes = list(state.get("trace_notes") or [])
@@ -526,24 +622,50 @@ def verify(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
 
 
 def explain(state: AgentState) -> dict[str, Any]:
-    """Node 8 (explain): Viết giải thích cho người bệnh có trích nguồn."""
+    """Node 8 (explain): Viết giải thích cho người bệnh có trích nguồn (model nhẹ ở chế độ real)."""
     targets = state.get("targets")
     needs = state.get("needs")
     snippets = state.get("snippets") or []
     assert targets is not None and needs is not None
 
-    text, usage = call_explain_llm(
-        needs=needs,
-        targets=targets,
-        snippets=snippets,
-    )
+    food_name_map = {
+        int(f["id"]): str(f.get("name_vi", ""))
+        for f in (state.get("allowed_foods") or [])
+        if "id" in f
+    }
+
+    trace_notes = list(state.get("trace_notes") or [])
+    try:
+        text, usage = call_explain_llm(
+            needs=needs,
+            targets=targets,
+            snippets=snippets,
+            plan_scored=state.get("plan_scored"),
+            plan_llm=state.get("plan_llm"),
+            food_name_map=food_name_map,
+        )
+        trace_notes.append("explain: đã tạo giải thích thực đơn")
+    except (
+        LLMConfigError,
+        genai_errors.APIError,
+        TimeoutError,
+        ConnectionError,
+        httpx.HTTPError,
+    ) as exc:
+        text, usage = call_explain_llm(
+            needs=needs,
+            targets=targets,
+            snippets=snippets,
+            mode="mock",
+        )
+        text = f"{text}\n\n*Ghi chú: Đã dùng giải thích tóm tắt dự phòng ({exc}).*"
+        trace_notes.append(f"explain: dùng tóm tắt dự phòng do lỗi LLM ({exc})")
+
     metrics = dict(state.get("metrics") or {})
     metrics["llm_calls"] = int(metrics.get("llm_calls", 0)) + 1
     metrics["tokens_in"] = int(metrics.get("tokens_in", 0)) + usage["tokens_in"]
     metrics["tokens_out"] = int(metrics.get("tokens_out", 0)) + usage["tokens_out"]
 
-    trace_notes = list(state.get("trace_notes") or [])
-    trace_notes.append("explain: đã tạo giải thích thực đơn")
     return {
         "explanation_md": text,
         "metrics": metrics,
@@ -627,6 +749,8 @@ def await_review(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
                 profile=profile,
                 targets=targets,
                 gateway=gateway,
+                needs=state.get("needs"),
+                allowed_foods=state.get("allowed_foods"),
             )
             if updated_violations:
                 new_status = "needs_human_review"
