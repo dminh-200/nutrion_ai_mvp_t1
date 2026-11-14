@@ -1,12 +1,14 @@
 """Gateway gọi 5 tool dinh dưỡng theo chế độ direct hoặc mcp (SPEC mục 7.5)."""
 
 import asyncio
+import os
 import sys
 import threading
+from contextlib import suppress
 from typing import Any
 
 from mcp import Client
-from mcp.client.stdio import StdioServerParameters
+from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from config.settings import get_settings
 from core.allergen import check_allergen as core_check_allergen
@@ -31,6 +33,7 @@ class _MCPSessionRunner:
     def __init__(self) -> None:
         self._loop = asyncio.new_event_loop()
         self._ready = threading.Event()
+        self._closed = threading.Event()
         self._close_event: asyncio.Event | None = None
         self._client: Client | None = None
         self._connect_error: BaseException | None = None
@@ -42,16 +45,25 @@ class _MCPSessionRunner:
         try:
             self._loop.run_until_complete(self._session_main())
         finally:
-            self._loop.close()
+            with suppress(Exception):
+                if not self._loop.is_running():
+                    self._loop.run_until_complete(self._loop.shutdown_asyncgens())
+            if not self._loop.is_running() and not self._loop.is_closed():
+                self._loop.close()
 
     async def _session_main(self) -> None:
         self._close_event = asyncio.Event()
+        if self._closed.is_set():
+            self._ready.set()
+            return
         params = StdioServerParameters(
             command=sys.executable,
             args=["-m", "mcp_server.server"],
         )
+        # Chuyển stderr của subprocess MCP sang DEVNULL để tránh đầy buffer pipe trên Windows.
+        errlog_file = open(os.devnull, "w", encoding="utf-8")
         try:
-            async with Client(params) as client:
+            async with Client(stdio_client(params, errlog=errlog_file)) as client:
                 self._client = client
                 self._ready.set()
                 await self._close_event.wait()
@@ -60,8 +72,12 @@ class _MCPSessionRunner:
             self._ready.set()
         finally:
             self._client = None
+            with suppress(OSError):
+                errlog_file.close()
 
     def ensure_connected(self) -> Client:
+        if self._closed.is_set():
+            raise RuntimeError("MCP client đã đóng.")
         self._ready.wait(timeout=30)
         if self._connect_error is not None:
             raise RuntimeError(f"Lỗi kết nối MCP server: {self._connect_error}")
@@ -86,9 +102,15 @@ class _MCPSessionRunner:
         return data
 
     def close(self) -> None:
+        self._closed.set()
         if self._close_event is not None and self._loop.is_running():
-            self._loop.call_soon_threadsafe(self._close_event.set)
-        self._thread.join(timeout=10)
+            with suppress(RuntimeError):
+                self._loop.call_soon_threadsafe(self._close_event.set)
+        self._thread.join(timeout=5.0)
+        if self._thread.is_alive() and self._loop.is_running():
+            with suppress(RuntimeError):
+                self._loop.call_soon_threadsafe(self._loop.stop)
+            self._thread.join(timeout=1.0)
 
 
 class ToolsGateway:

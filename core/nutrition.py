@@ -17,10 +17,18 @@ def load_rules(path: Path = DEFAULT_RULES_PATH) -> dict[str, Any]:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def _get_val(node: Any) -> float:
-    """Lấy giá trị số từ dict {value: ...} hoặc số trực tiếp."""
+def _get_val(node: Any, default: float | None = None) -> float:
+    """Lấy giá trị số từ dict {value: ...} hoặc số trực tiếp; dùng default nếu thiếu."""
+    if node is None:
+        if default is not None:
+            return float(default)
+        raise ValueError("Thiếu giá trị cấu hình số trong rules.yaml.")
     if isinstance(node, dict):
-        return float(node["value"])
+        if "value" in node and node["value"] is not None:
+            return float(node["value"])
+        if default is not None:
+            return float(default)
+        raise KeyError("value")
     return float(node)
 
 
@@ -39,7 +47,8 @@ def calc_bmr(sex: str, weight_kg: float, height_cm: float, age: int) -> float:
 def calc_tdee(bmr: float, activity_level: str, rules: dict[str, Any] | None = None) -> float:
     """Tính TDEE = BMR * hệ số hoạt động từ rules.yaml."""
     cfg = rules or load_rules()
-    factor = float(cfg["activity_factors"][activity_level])
+    factors = cfg.get("activity_factors") or {}
+    factor = _get_val(factors.get(activity_level), default=1.2)
     return round(bmr * factor, 1)
 
 
@@ -51,12 +60,15 @@ def calc_target_kcal(
 ) -> tuple[float, float]:
     """Tính target_kcal (trừ deficit nếu giam_can, áp sàn theo giới, làm tròn 10 kcal)."""
     cfg = rules or load_rules()
+    energy_cfg = cfg.get("energy") or {}
     kcal = tdee
     if "giam_can" in needs.needs:
-        deficit = _get_val(cfg["energy"]["deficit_kcal"])
+        deficit = _get_val(energy_cfg.get("deficit_kcal"), default=500.0)
         kcal = tdee - deficit
 
-    kcal_floor = _get_val(cfg["energy"]["kcal_floor"][profile.sex])
+    floor_cfg = energy_cfg.get("kcal_floor") or {}
+    default_floor = 1500.0 if profile.sex == "male" else 1200.0
+    kcal_floor = _get_val(floor_cfg.get(profile.sex), default=default_floor)
     kcal = max(kcal, kcal_floor)
     target_kcal = float(round(kcal / 10.0) * 10)
     return target_kcal, kcal_floor
@@ -70,19 +82,25 @@ def calc_macros(
     """Tính gram protein, fat, carb theo nhu cầu ưu tiên cao nhất trong rules.yaml."""
     cfg = rules or load_rules()
     chosen_need = "defaults"
-    macro_pct = cfg["defaults"]["macro_pct"]
+    defaults = cfg.get("defaults") or {}
+    macro_pct = defaults.get("macro_pct") or {"carb": 55, "protein": 15, "fat": 30}
+    needs_cfg = cfg.get("needs") or {}
 
     for need_name in cfg.get("priority", []):
         if need_name in needs.needs:
-            need_cfg = cfg["needs"].get(need_name, {})
+            need_cfg = needs_cfg.get(need_name) or {}
             if "macro_pct" in need_cfg:
                 macro_pct = need_cfg["macro_pct"]
                 chosen_need = need_name
                 break
 
-    protein_g = round((target_kcal * (macro_pct["protein"] / 100.0)) / 4.0, 1)
-    carb_g = round((target_kcal * (macro_pct["carb"] / 100.0)) / 4.0, 1)
-    fat_g = round((target_kcal * (macro_pct["fat"] / 100.0)) / 9.0, 1)
+    protein_pct = _get_val(macro_pct.get("protein"), default=15.0)
+    carb_pct = _get_val(macro_pct.get("carb"), default=55.0)
+    fat_pct = _get_val(macro_pct.get("fat"), default=30.0)
+
+    protein_g = round((target_kcal * (protein_pct / 100.0)) / 4.0, 1)
+    carb_g = round((target_kcal * (carb_pct / 100.0)) / 4.0, 1)
+    fat_g = round((target_kcal * (fat_pct / 100.0)) / 9.0, 1)
     return protein_g, fat_g, carb_g, chosen_need
 
 
@@ -99,24 +117,26 @@ def build_targets(
     target_kcal, kcal_floor = calc_target_kcal(tdee, needs, profile, cfg)
     protein_g, fat_g, carb_g, macro_source = calc_macros(target_kcal, needs, cfg)
 
-    defaults = cfg["defaults"]
-    sodium_candidates = [float(defaults["sodium_max_mg"])]
-    sugar_candidates = [float(defaults["sugar_max_g"])]
-    fiber_candidates = [float(defaults["fiber_min_g"])]
+    defaults = cfg.get("defaults") or {}
+    sodium_candidates = [_get_val(defaults.get("sodium_max_mg"), default=2300.0)]
+    sugar_candidates = [_get_val(defaults.get("sugar_max_g"), default=50.0)]
+    fiber_candidates = [_get_val(defaults.get("fiber_min_g"), default=20.0)]
 
+    needs_cfg = cfg.get("needs") or {}
     for need_name in needs.needs:
-        need_cfg = cfg["needs"].get(need_name, {})
+        need_cfg = needs_cfg.get(need_name) or {}
         if "sodium_max_mg" in need_cfg:
-            sodium_candidates.append(_get_val(need_cfg["sodium_max_mg"]))
+            sodium_candidates.append(_get_val(need_cfg.get("sodium_max_mg")))
         if "sugar_max_g" in need_cfg:
-            sugar_candidates.append(_get_val(need_cfg["sugar_max_g"]))
+            sugar_candidates.append(_get_val(need_cfg.get("sugar_max_g")))
         if "fiber_min_g" in need_cfg:
-            fiber_candidates.append(_get_val(need_cfg["fiber_min_g"]))
+            fiber_candidates.append(_get_val(need_cfg.get("fiber_min_g")))
 
     rationale = [f"Áp dụng quy tắc: {', '.join(needs.rule_refs)}"]
     rationale.append(f"Tỷ lệ macro theo: {macro_source}")
     if "giam_can" in needs.needs:
-        rationale.append(f"Giảm cân: TDEE - {_get_val(cfg['energy']['deficit_kcal']):.0f} kcal")
+        deficit_val = _get_val((cfg.get("energy") or {}).get("deficit_kcal"), default=500.0)
+        rationale.append(f"Giảm cân: TDEE - {deficit_val:.0f} kcal")
     rationale.append(f"Sàn năng lượng ({profile.sex}): {kcal_floor:.0f} kcal")
 
     return NutritionTargets(

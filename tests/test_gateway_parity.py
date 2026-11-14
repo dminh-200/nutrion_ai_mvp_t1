@@ -12,6 +12,7 @@ def _ensure_food_db() -> None:
     import_food_csv()
 
 
+@pytest.mark.mcp
 def test_gateway_parity_direct_vs_mcp() -> None:
     """Hai chế độ direct và mcp phải trả về kết quả tương đương nhau."""
     profile = PatientProfile(

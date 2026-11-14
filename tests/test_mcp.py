@@ -86,6 +86,7 @@ async def _run_mcp_checks() -> None:
         assert "999999" in r_err.structured_content["error"]["message"]
 
 
+@pytest.mark.mcp
 def test_mcp_server_all_5_tools() -> None:
     """Chạy kiểm thử 5 tool qua MCP Client bằng asyncio.run."""
     asyncio.run(_run_mcp_checks())

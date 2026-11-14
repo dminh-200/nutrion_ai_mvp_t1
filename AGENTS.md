@@ -35,3 +35,4 @@ Trước khi dùng API của bất kỳ thư viện nào ở trên: kiểm tra p
 
 ## Lệnh thường dùng
 make setup | make init-db | make seed | make ingest | make mcp-dev | make run | make test | make eval | make lint
+- Test mặc định: `.venv/Scripts/python.exe -m pytest -q -m "not slow"`

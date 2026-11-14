@@ -24,7 +24,7 @@ run:
 	$(PYTHON) -m streamlit run app/main.py
 
 test:
-	$(PYTEST) -q -m "not slow"
+	.venv/Scripts/python.exe -m pytest -q -m "not slow"
 
 eval:
 	$(PYTHON) -m evals.run_eval

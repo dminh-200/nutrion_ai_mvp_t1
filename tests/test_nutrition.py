@@ -142,3 +142,48 @@ def test_load_rules_has_todo_verify() -> None:
     rules = load_rules()
     assert rules["version"] == 1
     assert "verifier" in rules
+
+
+def test_build_targets_missing_sugar_default_uses_fallback() -> None:
+    """Nếu defaults thiếu sugar_max_g và không có t2d thì dùng giá trị dự phòng 50g."""
+    profile = _make_profile(conditions=["htn"])
+    needs = NeedsResult(needs=["giam_natri"], rule_refs=["NEED_HTN"])
+    targets = build_targets(profile, needs)
+    assert targets.sugar_max_g == 50.0
+    assert targets.sodium_max_mg == 2000.0
+
+
+def test_build_targets_supports_scalar_and_dict_value_formats() -> None:
+    """Hỗ trợ cả định dạng số trực tiếp X và dict {value: X} trong rules."""
+    custom_rules = {
+        "version": 1,
+        "activity_factors": {"moderate": {"value": 1.55}},
+        "energy": {
+            "deficit_kcal": 400,
+            "kcal_floor": {"male": 1400, "female": {"value": 1150}},
+        },
+        "needs": {
+            "giam_can": {
+                "macro_pct": {"carb": {"value": 40}, "protein": 30, "fat": 30},
+            },
+            "giam_natri": {
+                "sodium_max_mg": 1800,
+                "sugar_max_g": 30,
+                "fiber_min_g": {"value": 28},
+            },
+        },
+        "defaults": {
+            "macro_pct": {"carb": 55, "protein": 15, "fat": 30},
+            "sodium_max_mg": {"value": 2300},
+            "fiber_min_g": 20,
+        },
+        "priority": ["giam_can"],
+    }
+    profile = _make_profile(conditions=["obesity", "htn"])
+    needs = NeedsResult(needs=["giam_can", "giam_natri"], rule_refs=["NEED_WEIGHT", "NEED_HTN"])
+    targets = build_targets(profile, needs, rules=custom_rules)
+    assert targets.kcal_floor == 1400.0
+    assert targets.sodium_max_mg == 1800.0
+    assert targets.sugar_max_g == 30.0
+    assert targets.fiber_min_g == 28.0
+    assert targets.protein_g == round(targets.target_kcal * 0.30 / 4.0, 1)

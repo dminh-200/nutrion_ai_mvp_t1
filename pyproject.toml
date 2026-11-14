@@ -15,4 +15,5 @@ select = ["E", "F", "I", "UP", "B"]
 testpaths = ["tests"]
 markers = [
     "slow: đánh dấu test cần tải mô hình embedding lớn hoặc chạy lâu",
+    "mcp: đánh dấu test khởi chạy MCP server qua stdio/asyncio",
 ]
