@@ -3,6 +3,7 @@
 PYTHON := .venv/Scripts/python
 PYTEST := .venv/Scripts/pytest
 RUFF := .venv/Scripts/ruff
+MCP := .venv/Scripts/mcp
 
 setup:
 	python -m pip install -r requirements.txt
@@ -17,7 +18,7 @@ ingest:
 	$(PYTHON) -m rag.ingest
 
 mcp-dev:
-	$(PYTHON) -m mcp.cli dev mcp_server/server.py
+	$(MCP) dev mcp_server/server.py --with-editable .
 
 run:
 	$(PYTHON) -m streamlit run app/main.py
