@@ -1,1 +1,322 @@
-[]
+[
+  {
+    "id": "G01",
+    "description": "Nam 55 tuổi, ĐTĐ type 2 đơn bệnh",
+    "profile": {
+      "patient_code": "GOLD01",
+      "age": 55,
+      "sex": "male",
+      "height_cm": 170.0,
+      "weight_kg": 68.0,
+      "activity_level": "light",
+      "conditions": [
+        "t2d"
+      ],
+      "allergens": [],
+      "days": 3
+    },
+    "expected": {
+      "bmi": 23.5,
+      "bmr": 1472.5,
+      "tdee": 2024.69,
+      "target_kcal": 2020,
+      "protein_g": 101.0,
+      "fat_g": 78.6,
+      "carb_g": 227.2,
+      "sodium_max_mg": 2300,
+      "fiber_min_g": 25,
+      "needs": [
+        "kiem_soat_duong_huyet"
+      ]
+    }
+  },
+  {
+    "id": "G02",
+    "description": "Nữ 62 tuổi, Tăng huyết áp đơn bệnh",
+    "profile": {
+      "patient_code": "GOLD02",
+      "age": 62,
+      "sex": "female",
+      "height_cm": 156.0,
+      "weight_kg": 54.0,
+      "activity_level": "sedentary",
+      "conditions": [
+        "htn"
+      ],
+      "allergens": [],
+      "days": 3
+    },
+    "expected": {
+      "bmi": 22.2,
+      "bmr": 1044.0,
+      "tdee": 1252.8,
+      "target_kcal": 1250,
+      "protein_g": 46.9,
+      "fat_g": 41.7,
+      "carb_g": 171.9,
+      "sodium_max_mg": 2000,
+      "fiber_min_g": 20,
+      "needs": [
+        "giam_natri"
+      ]
+    }
+  },
+  {
+    "id": "G03",
+    "description": "Nam 45 tuổi, Gout đơn bệnh",
+    "profile": {
+      "patient_code": "GOLD03",
+      "age": 45,
+      "sex": "male",
+      "height_cm": 172.0,
+      "weight_kg": 70.0,
+      "activity_level": "moderate",
+      "conditions": [
+        "gout"
+      ],
+      "allergens": [],
+      "days": 3
+    },
+    "expected": {
+      "bmi": 23.7,
+      "bmr": 1555.0,
+      "tdee": 2410.25,
+      "target_kcal": 2410,
+      "protein_g": 90.4,
+      "fat_g": 80.3,
+      "carb_g": 331.4,
+      "sodium_max_mg": 2300,
+      "fiber_min_g": 20,
+      "needs": [
+        "han_che_purin"
+      ]
+    }
+  },
+  {
+    "id": "G04",
+    "description": "Nữ 34 tuổi, Béo phì (BMI 28.1)",
+    "profile": {
+      "patient_code": "GOLD04",
+      "age": 34,
+      "sex": "female",
+      "height_cm": 160.0,
+      "weight_kg": 72.0,
+      "activity_level": "light",
+      "conditions": [
+        "obesity"
+      ],
+      "allergens": [],
+      "days": 3
+    },
+    "expected": {
+      "bmi": 28.1,
+      "bmr": 1389.0,
+      "tdee": 1909.88,
+      "target_kcal": 1410,
+      "protein_g": 88.1,
+      "fat_g": 47.0,
+      "carb_g": 158.6,
+      "sodium_max_mg": 2300,
+      "fiber_min_g": 20,
+      "needs": [
+        "giam_can"
+      ]
+    }
+  },
+  {
+    "id": "G05",
+    "description": "Nữ 40 tuổi, không khai báo obesity nhưng BMI >= 25 (tự kích hoạt giảm cân) + chạm sàn 1200 kcal",
+    "profile": {
+      "patient_code": "GOLD05",
+      "age": 40,
+      "sex": "female",
+      "height_cm": 152.0,
+      "weight_kg": 60.0,
+      "activity_level": "sedentary",
+      "conditions": [],
+      "allergens": [],
+      "days": 3
+    },
+    "expected": {
+      "bmi": 26.0,
+      "bmr": 1189.0,
+      "tdee": 1426.8,
+      "target_kcal": 1200,
+      "protein_g": 75.0,
+      "fat_g": 40.0,
+      "carb_g": 135.0,
+      "sodium_max_mg": 2300,
+      "fiber_min_g": 20,
+      "needs": [
+        "giam_can"
+      ]
+    }
+  },
+  {
+    "id": "G06",
+    "description": "Nam 58 tuổi, Đa bệnh ĐTĐ + THA + Béo phì",
+    "profile": {
+      "patient_code": "GOLD06",
+      "age": 58,
+      "sex": "male",
+      "height_cm": 168.0,
+      "weight_kg": 82.0,
+      "activity_level": "light",
+      "conditions": [
+        "t2d",
+        "htn",
+        "obesity"
+      ],
+      "allergens": [],
+      "days": 3
+    },
+    "expected": {
+      "bmi": 29.1,
+      "bmr": 1585.0,
+      "tdee": 2179.38,
+      "target_kcal": 1680,
+      "protein_g": 84.0,
+      "fat_g": 65.3,
+      "carb_g": 189.0,
+      "sodium_max_mg": 2000,
+      "fiber_min_g": 25,
+      "needs": [
+        "kiem_soat_duong_huyet",
+        "giam_natri",
+        "giam_can"
+      ]
+    }
+  },
+  {
+    "id": "G07",
+    "description": "Nam 50 tuổi, Đa bệnh Gout + THA + dị ứng hải sản",
+    "profile": {
+      "patient_code": "GOLD07",
+      "age": 50,
+      "sex": "male",
+      "height_cm": 175.0,
+      "weight_kg": 74.0,
+      "activity_level": "moderate",
+      "conditions": [
+        "gout",
+        "htn"
+      ],
+      "allergens": [
+        "seafood"
+      ],
+      "days": 3
+    },
+    "expected": {
+      "bmi": 24.2,
+      "bmr": 1588.75,
+      "tdee": 2462.56,
+      "target_kcal": 2460,
+      "protein_g": 92.2,
+      "fat_g": 82.0,
+      "carb_g": 338.2,
+      "sodium_max_mg": 2000,
+      "fiber_min_g": 20,
+      "needs": [
+        "giam_natri",
+        "han_che_purin",
+        "tranh_di_ung:seafood"
+      ]
+    }
+  },
+  {
+    "id": "G08",
+    "description": "Nữ 28 tuổi, Bình thường duy trì cân bằng",
+    "profile": {
+      "patient_code": "GOLD08",
+      "age": 28,
+      "sex": "female",
+      "height_cm": 162.0,
+      "weight_kg": 52.0,
+      "activity_level": "active",
+      "conditions": [],
+      "allergens": [],
+      "days": 3
+    },
+    "expected": {
+      "bmi": 19.8,
+      "bmr": 1231.5,
+      "tdee": 2124.34,
+      "target_kcal": 2120,
+      "protein_g": 79.5,
+      "fat_g": 70.7,
+      "carb_g": 291.5,
+      "sodium_max_mg": 2300,
+      "fiber_min_g": 20,
+      "needs": [
+        "duy_tri_can_bang"
+      ]
+    }
+  },
+  {
+    "id": "G09",
+    "description": "Nam 30 tuổi, Vận động rất nặng, bình thường + dị ứng đậu phộng & sữa",
+    "profile": {
+      "patient_code": "GOLD09",
+      "age": 30,
+      "sex": "male",
+      "height_cm": 178.0,
+      "weight_kg": 72.0,
+      "activity_level": "very_active",
+      "conditions": [],
+      "allergens": [
+        "peanut",
+        "milk"
+      ],
+      "days": 3
+    },
+    "expected": {
+      "bmi": 22.7,
+      "bmr": 1687.5,
+      "tdee": 3206.25,
+      "target_kcal": 3210,
+      "protein_g": 120.4,
+      "fat_g": 107.0,
+      "carb_g": 441.4,
+      "sodium_max_mg": 2300,
+      "fiber_min_g": 20,
+      "needs": [
+        "tranh_di_ung:peanut",
+        "tranh_di_ung:milk"
+      ]
+    }
+  },
+  {
+    "id": "G10",
+    "description": "Nam 48 tuổi, Béo phì nhưng TDEE thấp chạm sàn 1500 kcal",
+    "profile": {
+      "patient_code": "GOLD10",
+      "age": 48,
+      "sex": "male",
+      "height_cm": 160.0,
+      "weight_kg": 66.0,
+      "activity_level": "sedentary",
+      "conditions": [
+        "obesity"
+      ],
+      "allergens": [
+        "egg"
+      ],
+      "days": 3
+    },
+    "expected": {
+      "bmi": 25.8,
+      "bmr": 1425.0,
+      "tdee": 1710.0,
+      "target_kcal": 1500,
+      "protein_g": 93.8,
+      "fat_g": 50.0,
+      "carb_g": 168.8,
+      "sodium_max_mg": 2300,
+      "fiber_min_g": 20,
+      "needs": [
+        "giam_can",
+        "tranh_di_ung:egg"
+      ]
+    }
+  }
+]

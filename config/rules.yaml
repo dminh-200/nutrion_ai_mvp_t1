@@ -5,79 +5,55 @@ activity_factors:
   moderate: 1.55
   active: 1.725
   very_active: 1.9
-
 energy:
   deficit_kcal:
     value: 500
-    source: ""
-    status: TODO_VERIFY
+    source: "Bộ Y tế Việt Nam - QĐ 2892/QĐ-BYT (2022), Hướng dẫn chẩn đoán và điều trị bệnh béo phì"
+    status: VERIFIED
   kcal_floor:
     female:
       value: 1200
-      source: ""
-      status: TODO_VERIFY
+      source: "Bộ Y tế Việt Nam - QĐ 2892/QĐ-BYT (2022) & Viện Dinh dưỡng Quốc gia"
+      status: VERIFIED
     male:
       value: 1500
-      source: ""
-      status: TODO_VERIFY
-
+      source: "Bộ Y tế Việt Nam - QĐ 2892/QĐ-BYT (2022) & Viện Dinh dưỡng Quốc gia"
+      status: VERIFIED
 needs:
   kiem_soat_duong_huyet:
-    macro_pct:
-      carb: 45
-      protein: 20
-      fat: 35
-    macro_status: TODO_VERIFY
+    macro_pct: {carb: 45, protein: 20, fat: 35}
+    macro_source: "Bộ Y tế Việt Nam - QĐ 5481/QĐ-BYT (2020) & ADA Standards of Care (2026)"
     sugar_max_g:
       value: 25
-      source: ""
-      status: TODO_VERIFY
+      source: "WHO Guideline: Sugars intake for adults and children (2015)"
+      status: VERIFIED
     fiber_min_g:
       value: 25
-      source: ""
-      status: TODO_VERIFY
-    avoid_tags:
-      - do_ngot
-      - nuoc_ngot
+      source: "Bộ Y tế Việt Nam - QĐ 5481/QĐ-BYT (2020), Hướng dẫn điều trị ĐTĐ típ 2"
+      status: VERIFIED
+    avoid_tags: [do_ngot, nuoc_ngot]
   giam_natri:
     sodium_max_mg:
       value: 2000
-      source: ""
-      status: TODO_VERIFY
-    avoid_tags:
-      - do_muoi
-      - che_bien_san
+      source: "WHO Guideline: Sodium intake for adults and children (2012) & Bộ Y tế QĐ 3192/QĐ-BYT (2010)"
+      status: VERIFIED
+    avoid_tags: [do_muoi, che_bien_san]
   han_che_purin:
     max_purine_level: medium
-    avoid_tags:
-      - noi_tang
-      - bia_ruou
+    source: "Bộ Y tế Việt Nam - Hướng dẫn chẩn đoán và điều trị các bệnh Cơ Xương Khớp (Bệnh Gút, 2016)"
+    avoid_tags: [noi_tang, bia_ruou]
   giam_can:
     bmi_threshold:
       value: 25
-      source: ""
-      status: TODO_VERIFY
-    macro_pct:
-      carb: 45
-      protein: 25
-      fat: 30
-    macro_status: TODO_VERIFY
-
+      source: "Bộ Y tế Việt Nam - QĐ 2892/QĐ-BYT (2022), ngưỡng béo phì người châu Á (WHO WPRO)"
+      status: VERIFIED
+    macro_pct: {carb: 45, protein: 25, fat: 30}
+    macro_source: "Bộ Y tế Việt Nam - QĐ 2892/QĐ-BYT (2022)"
 defaults:
-  macro_pct:
-    carb: 55
-    protein: 15
-    fat: 30
+  macro_pct: {carb: 55, protein: 15, fat: 30}
   sodium_max_mg: 2300
-  sugar_max_g: 50
   fiber_min_g: 20
-
-priority:
-  - kiem_soat_duong_huyet
-  - giam_can
-  - han_che_purin
-  - giam_natri
-
+priority: [kiem_soat_duong_huyet, giam_can, han_che_purin, giam_natri]
 verifier:
   kcal_tolerance_pct: 10
   macro_tolerance_pct: 15
