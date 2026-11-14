@@ -1,0 +1,39 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	intake(intake)
+	input_guardrail(input_guardrail)
+	classify(classify)
+	retrieve(retrieve)
+	plan(plan)
+	portion_adjust(portion_adjust)
+	verify(verify)
+	explain(explain)
+	output_guardrail(output_guardrail)
+	await_review(await_review)
+	finalize(finalize)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> intake;
+	await_review --> finalize;
+	classify --> retrieve;
+	explain --> output_guardrail;
+	input_guardrail -.-> classify;
+	input_guardrail -.-> finalize;
+	intake --> input_guardrail;
+	output_guardrail -.-> await_review;
+	output_guardrail -.-> finalize;
+	plan -.-> finalize;
+	plan -.-> portion_adjust;
+	portion_adjust --> verify;
+	retrieve --> plan;
+	verify -.-> explain;
+	verify -.-> finalize;
+	verify -.-> plan;
+	finalize --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc
