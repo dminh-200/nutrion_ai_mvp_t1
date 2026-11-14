@@ -1,0 +1,55 @@
+- file_name: t2d_byt_2020.pdf
+  source_name: "Hướng dẫn chẩn đoán và điều trị đái tháo đường típ 2 (QĐ 5481/QĐ-BYT)"
+  organization: "Bộ Y tế Việt Nam"
+  year: 2020
+  url: "https://kcb.vn"
+  diseases: ["t2d"]
+  license_note: "Tài liệu chuyên môn y tế công bố công khai"
+
+- file_name: t2d_ada_2026.pdf
+  source_name: "ADA Standards of Care in Diabetes - 2026 (Nutrition Therapy)"
+  organization: "American Diabetes Association"
+  year: 2026
+  url: "https://professional.diabetes.org/standards-of-care"
+  diseases: ["t2d", "obesity"]
+  license_note: "Trích dẫn mục đích nghiên cứu học thuật"
+
+- file_name: htn_byt_2010.pdf
+  source_name: "Hướng dẫn chẩn đoán và điều trị tăng huyết áp (QĐ 3192/QĐ-BYT)"
+  organization: "Bộ Y tế Việt Nam"
+  year: 2010
+  url: "https://kcb.vn"
+  diseases: ["htn"]
+  license_note: "Tài liệu chuyên môn y tế công bố công khai"
+
+- file_name: htn_who_sodium_2012.pdf
+  source_name: "WHO Guideline: Sodium intake for adults and children"
+  organization: "World Health Organization"
+  year: 2012
+  url: "https://www.who.int/publications/i/item/9789241504836"
+  diseases: ["htn"]
+  license_note: "CC BY-NC-SA 3.0 IGO"
+
+- file_name: obesity_byt_2022.pdf
+  source_name: "Hướng dẫn chẩn đoán và điều trị bệnh béo phì (QĐ 2892/QĐ-BYT)"
+  organization: "Bộ Y tế Việt Nam"
+  year: 2022
+  url: "https://thuvienphapluat.vn"
+  diseases: ["obesity"]
+  license_note: "Tài liệu chuyên môn y tế công bố công khai"
+
+- file_name: obesity_who_sugars_2015.pdf
+  source_name: "WHO Guideline: Sugars intake for adults and children"
+  organization: "World Health Organization"
+  year: 2015
+  url: "https://www.who.int/publications/i/item/9789241549028"
+  diseases: ["obesity", "t2d"]
+  license_note: "CC BY-NC-SA 3.0 IGO"
+
+- file_name: gout_byt_2016.pdf
+  source_name: "Hướng dẫn chẩn đoán và điều trị bệnh Cơ Xương Khớp (Bệnh Gút)"
+  organization: "Bộ Y tế Việt Nam"
+  year: 2016
+  url: "https://kcb.vn"
+  diseases: ["gout"]
+  license_note: "Tài liệu chuyên môn y tế công bố công khai"

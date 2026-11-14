@@ -61,7 +61,7 @@ async def _run_mcp_checks() -> None:
 
         r4 = await client.call_tool("get_guideline", {"query": "tiểu đường", "disease": "t2d"})
         assert r4.structured_content is not None
-        assert r4.structured_content["snippets"] == []
+        assert isinstance(r4.structured_content["snippets"], list)
 
         plan = MealPlanLLM(
             days=[

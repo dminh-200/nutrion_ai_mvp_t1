@@ -1,0 +1,22 @@
+[
+  {"id": "Q01", "query": "tỷ lệ glucid lipid protein trong tổng năng lượng cho người tiểu đường type 2", "disease": "t2d", "expected_keywords": ["Glucid", "50 – 60%", "130g"]},
+  {"id": "Q02", "query": "người bệnh tiểu đường nên chọn loại tinh bột và ngũ cốc giàu chất xơ nào", "disease": "t2d", "expected_keywords": ["ngũ cốc nguyên hạt", "gạo lứt", "chất xơ"]},
+  {"id": "Q03", "query": "thực phẩm tăng đường huyết nhanh cần hạn chế ở người đái tháo đường", "disease": "t2d", "expected_keywords": ["đường kính", "mật ong", "tăng đường huyết nhanh"]},
+  {"id": "Q04", "query": "lượng muối tối đa và thực phẩm chế biến sẵn cần tránh khi bị đái tháo đường", "disease": "t2d", "expected_keywords": ["5g muối", "2,000 mg", "dưa muối"]},
+  {"id": "Q05", "query": "người tiểu đường nên ăn trái cây nguyên múi hay uống nước ép", "disease": "t2d", "expected_keywords": ["nguyên múi", "nước ép", "whole fruit"]},
+  {"id": "Q06", "query": "người tăng huyết áp nên giảm ăn mặn xuống bao nhiêu gam muối mỗi ngày", "disease": "htn", "expected_keywords": ["6 gam muối", "5 g/day salt", "2 g/day sodium"]},
+  {"id": "Q07", "query": "khuyến cáo của WHO về giảm natri (sodium) và muối để hạ huyết áp ở người lớn", "disease": "htn", "expected_keywords": ["sodium", "2 g/day", "5 g/day"]},
+  {"id": "Q08", "query": "chế độ ăn cho người tăng huyết áp cần bổ sung kali, rau xanh và hạn chế chất béo nào", "disease": "htn", "expected_keywords": ["kali", "cholesterol", "potassium"]},
+  {"id": "Q09", "query": "giới hạn uống rượu bia theo cốc chuẩn cho người bị tăng huyết áp", "disease": "htn", "expected_keywords": ["rượu, bia", "3 cốc chuẩn", "ethanol"]},
+  {"id": "Q10", "query": "WHO guideline on reducing sodium intake in processed foods and increasing potassium", "disease": "htn", "expected_keywords": ["potassium", "processed foods", "sodium"]},
+  {"id": "Q11", "query": "chế độ ăn uống cho người bị gút hạn chế purin và lượng thịt tối đa mỗi ngày", "disease": "gout", "expected_keywords": ["purin", "150g", "tạng động"]},
+  {"id": "Q12", "query": "người bệnh gút nên uống bao nhiêu nước mỗi ngày để hạn chế lắng đọng urat", "disease": "gout", "expected_keywords": ["2-4lít", "nước khoáng", "urat"]},
+  {"id": "Q13", "query": "người bị gút có nên uống rượu không và nên ăn trứng hoa quả thế nào", "disease": "gout", "expected_keywords": ["purin", "150g", "rượu"]},
+  {"id": "Q14", "query": "mục tiêu kiểm soát nồng độ acid uric máu trong điều trị bệnh gút", "disease": "gout", "expected_keywords": ["360 µmol/l", "320 µmol/l", "acid uric"]},
+  {"id": "Q15", "query": "yếu tố nguy cơ gây bệnh gút liên quan đến tăng huyết áp, béo phì và uống rượu", "disease": "gout", "expected_keywords": ["acid uric", "béo phì", "huyết áp"]},
+  {"id": "Q16", "query": "WHO guideline on reducing free sugars intake to less than 10% and 5% of total energy", "disease": "obesity", "expected_keywords": ["free sugars", "10%", "5%"]},
+  {"id": "Q17", "query": "đồ uống có đường (sugar-sweetened beverages) và nguy cơ thừa cân béo phì", "disease": "obesity", "expected_keywords": ["sugar-sweetened beverages", "overweight", "body weight"]},
+  {"id": "Q18", "query": "mục tiêu giảm bao nhiêu phần trăm cân nặng (weight loss) cho người thừa cân béo phì", "disease": "obesity", "expected_keywords": ["weight loss", "5%", "5–7%"]},
+  {"id": "Q19", "query": "mức cắt giảm năng lượng (energy restriction) và meal replacements trong giảm cân", "disease": "obesity", "expected_keywords": ["energy restriction", "500", "meal replacements"]},
+  {"id": "Q20", "query": "người thừa cân béo phì nên chọn nước lọc hay đồ uống ít năng lượng thay thế nước ngọt", "disease": "obesity", "expected_keywords": ["water", "sweetened", "calorie"]}
+]

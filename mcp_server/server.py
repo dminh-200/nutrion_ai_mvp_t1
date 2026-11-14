@@ -95,9 +95,9 @@ def get_guideline(query: str, disease: str | None = None, k: int = 4) -> dict[st
     """Truy xuất đoạn hướng dẫn dinh dưỡng từ RAG (ChromaDB)."""
     t0 = time.perf_counter()
     try:
-        from rag.retrieve import retrieve_guidelines
+        from rag.retrieve import retrieve
 
-        snippets = retrieve_guidelines(query=query, disease=disease, k=k)
+        snippets = retrieve(query=query, disease=disease, k=k)
         return {"snippets": [s.model_dump() for s in snippets]}
     except Exception as exc:
         return _err("GET_GUIDELINE_ERROR", str(exc))

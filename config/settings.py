@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     CHECKPOINT_DB: str = "db/checkpoints.sqlite"
     CHROMA_DIR: str = "rag/chroma"
     EMBEDDING_MODEL: str = "intfloat/multilingual-e5-small"
+    RAG_MIN_SCORE: float = 0.2
     APP_ENV: Literal["dev", "demo"] = "dev"
 
     @property

@@ -1,0 +1,7 @@
+- file_name: sample_guideline.txt
+  source_name: Tài liệu mẫu 4 bệnh (Fixture)
+  organization: Bộ Y tế / Viện Dinh dưỡng (Mẫu)
+  year: 2024
+  url: ""
+  diseases: ["t2d", "htn", "gout", "obesity"]
+  license_note: Fixture kiểm thử tự động M6
