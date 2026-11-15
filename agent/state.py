@@ -18,6 +18,7 @@ class AgentState(TypedDict, total=False):
 
     session_id: str
     thread_id: str
+    trace_id: str
     profile: PatientProfile
     risk: RiskResult | None
     input_flags: list[str]

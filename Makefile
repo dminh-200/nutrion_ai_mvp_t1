@@ -1,4 +1,4 @@
-.PHONY: setup init-db seed ingest mcp-dev run test eval lint
+.PHONY: setup init-db import-food seed ingest mcp-dev run test eval eval-rag check-rules lint
 
 PYTHON := .venv/Scripts/python
 PYTEST := .venv/Scripts/pytest
@@ -10,6 +10,9 @@ setup:
 
 init-db:
 	$(PYTHON) -m db.init_db
+
+import-food:
+	$(PYTHON) -m db.import_food
 
 seed:
 	$(PYTHON) -m db.seed_patients
@@ -24,10 +27,16 @@ run:
 	$(PYTHON) -m streamlit run app/main.py
 
 test:
-	.venv/Scripts/python.exe -m pytest -q -m "not slow"
+	$(PYTHON) -m pytest -q -m "not slow"
 
 eval:
 	$(PYTHON) -m evals.run_eval
+
+eval-rag:
+	$(PYTHON) -m evals.rag_eval
+
+check-rules:
+	$(PYTHON) -m scripts.check_rules
 
 lint:
 	$(RUFF) check .

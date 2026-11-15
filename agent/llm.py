@@ -18,11 +18,27 @@ from google.genai import errors as genai_errors
 from google.genai import types
 from pydantic import ValidationError
 
+try:
+    import groq
+    from groq import Groq
+except ImportError:  # pragma: no cover
+    groq = None
+    Groq = None
+
+try:
+    import openai
+    from openai import OpenAI
+except ImportError:  # pragma: no cover
+    openai = None
+    OpenAI = None
+
 from agent.prompts import build_explain_prompt, build_planner_prompt
 from config.settings import Settings, get_settings
 from core.nutrition import load_rules
 from core.schemas import (
     DayPlan,
+    DraftMenu,
+    ExplainOutput,
     GuidelineSnippet,
     Meal,
     MealPlanLLM,
@@ -31,6 +47,8 @@ from core.schemas import (
     PatientProfile,
     PlannedItem,
 )
+from observability.querylog import estimate_cost_usd
+from observability.tracing import trace_llm_generation
 
 PLANNER_SYSTEM_INSTRUCTION = (
     "Bạn là trợ lý lập khẩu phần ăn hỗ trợ chuyên gia dinh dưỡng. "
@@ -48,7 +66,7 @@ MAX_JSON_RETRIES = 2
 
 
 class LLMConfigError(RuntimeError):
-    """Lỗi cấu hình khi chạy LLM_MODE=real nhưng thiếu GEMINI_API_KEY."""
+    """Lỗi cấu hình khi chạy LLM_MODE=real nhưng thiếu GEMINI_API_KEY hoặc GROQ_API_KEY."""
 
 
 class _RateLimiter:
@@ -103,6 +121,36 @@ def _is_retryable_api_error(exc: BaseException) -> bool:
         if code in (408, 429) or (code is not None and 500 <= int(code) < 600):
             return True
         return isinstance(exc, genai_errors.ServerError)
+    if groq is not None:
+        if isinstance(
+            exc,
+            (
+                groq.RateLimitError,
+                groq.InternalServerError,
+                groq.APIConnectionError,
+                groq.APITimeoutError,
+            ),
+        ):
+            return True
+        if isinstance(exc, groq.APIStatusError):
+            code_num = getattr(exc, "status_code", None)
+            if code_num in (408, 429) or (code_num is not None and 500 <= int(code_num) < 600):
+                return True
+    if openai is not None:
+        if isinstance(
+            exc,
+            (
+                openai.RateLimitError,
+                openai.InternalServerError,
+                openai.APIConnectionError,
+                openai.APITimeoutError,
+            ),
+        ):
+            return True
+        if isinstance(exc, openai.APIStatusError):
+            code_num = getattr(exc, "status_code", None)
+            if code_num in (408, 429) or (code_num is not None and 500 <= int(code_num) < 600):
+                return True
     return isinstance(
         exc,
         (
@@ -115,13 +163,18 @@ def _is_retryable_api_error(exc: BaseException) -> bool:
 
 
 def _extract_usage(response: Any) -> dict[str, int]:
-    """Đọc số token đầu vào/đầu ra từ GenerateContentResponse."""
+    """Đọc số token đầu vào/đầu ra từ GenerateContentResponse hoặc Groq ChatCompletion."""
     meta = getattr(response, "usage_metadata", None)
-    if meta is None:
-        return {"tokens_in": 0, "tokens_out": 0}
-    tokens_in = getattr(meta, "prompt_token_count", None) or 0
-    tokens_out = getattr(meta, "candidates_token_count", None) or 0
-    return {"tokens_in": int(tokens_in), "tokens_out": int(tokens_out)}
+    if meta is not None:
+        tokens_in = getattr(meta, "prompt_token_count", None) or 0
+        tokens_out = getattr(meta, "candidates_token_count", None) or 0
+        return {"tokens_in": int(tokens_in), "tokens_out": int(tokens_out)}
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        tokens_in = getattr(usage, "prompt_tokens", None) or 0
+        tokens_out = getattr(usage, "completion_tokens", None) or 0
+        return {"tokens_in": int(tokens_in), "tokens_out": int(tokens_out)}
+    return {"tokens_in": 0, "tokens_out": 0}
 
 
 def _strip_json_fences(raw_text: str) -> str:
@@ -137,19 +190,54 @@ def _strip_json_fences(raw_text: str) -> str:
     return text
 
 
-def _parse_meal_plan_response(response: Any) -> MealPlanLLM:
-    """Lấy response.parsed; nếu None thì parse JSON thủ công và validate bằng MealPlanLLM."""
+def _parse_meal_plan_response(
+    response: Any,
+    allowed_foods: list[dict[str, Any]] | None = None,
+) -> MealPlanLLM:
+    """Lấy response.parsed hoặc parse JSON thủ công và validate bằng MealPlanLLM / DraftMenu."""
     parsed = getattr(response, "parsed", None)
     if isinstance(parsed, MealPlanLLM):
         return parsed
     if isinstance(parsed, dict):
         return MealPlanLLM.model_validate(parsed)
 
-    raw_text = getattr(response, "text", None) or ""
+    raw_text = None
+    choices = getattr(response, "choices", None)
+    if choices and len(choices) > 0:
+        msg = getattr(choices[0], "message", None)
+        if msg is not None:
+            raw_text = getattr(msg, "content", None)
+    if raw_text is None:
+        raw_text = getattr(response, "text", None) or ""
+
     cleaned = _strip_json_fences(str(raw_text))
     if not cleaned:
         raise ValueError("Phản hồi LLM rỗng, không có nội dung JSON.")
-    return MealPlanLLM.model_validate_json(cleaned)
+
+    data = json.loads(cleaned)
+    if isinstance(data, dict):
+        if allowed_foods:
+            code_map: dict[str, int] = {}
+            for f in allowed_foods:
+                code_val = str(f.get("code") or "").strip().lower()
+                if code_val and "id" in f:
+                    code_map[code_val] = int(f["id"])
+
+            if "days" in data and isinstance(data["days"], list):
+                for day in data["days"]:
+                    if isinstance(day, dict) and isinstance(day.get("meals"), list):
+                        for meal in day["meals"]:
+                            if isinstance(meal, dict) and isinstance(meal.get("items"), list):
+                                for item in meal["items"]:
+                                    if isinstance(item, dict):
+                                        fid = item.get("food_id")
+                                        if isinstance(fid, str) and not fid.isdigit():
+                                            mapped = code_map.get(fid.strip().lower())
+                                            if mapped is not None:
+                                                item["food_id"] = mapped
+
+        return DraftMenu.model_validate(data)
+    return DraftMenu.model_validate_json(cleaned)
 
 
 def _compute_cache_key(
@@ -208,6 +296,81 @@ def _build_genai_client(settings: Settings) -> genai.Client:
     )
 
 
+def _build_groq_client(settings: Settings) -> Any:
+    """Khởi tạo Groq Client; báo LLMConfigError rõ ràng nếu thiếu GROQ_API_KEY."""
+    if Groq is None:
+        raise LLMConfigError(
+            "Thư viện 'groq' chưa được cài đặt. Vui lòng cài đặt qua pip install groq."
+        )
+    api_key = settings.GROQ_API_KEY.strip()
+    if not api_key:
+        ok, err_msg = settings.validate_llm_config()
+        raise LLMConfigError(
+            err_msg
+            if not ok and err_msg
+            else "Thiếu GROQ_API_KEY khi LLM_MODE=real và LLM_PROVIDER=groq. "
+            "Vui lòng điền GROQ_API_KEY trong .env hoặc chuyển sang LLM_MODE=mock."
+        )
+    return Groq(
+        api_key=api_key,
+        max_retries=0,
+        timeout=DEFAULT_HTTP_TIMEOUT_MS / 1000.0,
+    )
+
+
+def _build_alibaba_client(settings: Settings) -> Any:
+    """Khởi tạo OpenAI-compatible Client cho Alibaba Cloud Model Studio."""
+    if OpenAI is None:
+        raise LLMConfigError(
+            "Thư viện 'openai' chưa được cài đặt. Vui lòng cài đặt qua pip install openai."
+        )
+    api_key = settings.ALIBABA_API_KEY.strip()
+    if not api_key:
+        ok, err_msg = settings.validate_llm_config()
+        raise LLMConfigError(
+            err_msg
+            if not ok and err_msg
+            else "Thiếu ALIBABA_API_KEY khi LLM_MODE=real và LLM_PROVIDER=alibaba. "
+            "Vui lòng điền ALIBABA_API_KEY trong .env hoặc chuyển sang LLM_MODE=mock."
+        )
+    return OpenAI(
+        api_key=api_key,
+        base_url=settings.ALIBABA_BASE_URL.strip(),
+        max_retries=0,
+        timeout=DEFAULT_HTTP_TIMEOUT_MS / 1000.0,
+    )
+
+
+def _parse_explain_json_response(response: Any) -> str:
+    """Trích xuất và validate ExplainOutput từ phản hồi OpenAI-compatible (Groq / Alibaba)."""
+    raw_content = ""
+    choices = getattr(response, "choices", None)
+    if choices and len(choices) > 0:
+        msg = getattr(choices[0], "message", None)
+        if msg is not None:
+            raw_content = getattr(msg, "content", "") or ""
+    try:
+        parsed_explain = ExplainOutput.model_validate_json(raw_content)
+        return parsed_explain.explanation_md.strip()
+    except (ValueError, ValidationError):
+        cleaned = _strip_json_fences(raw_content)
+        try:
+            parsed_explain = ExplainOutput.model_validate_json(cleaned)
+            return parsed_explain.explanation_md.strip()
+        except Exception:
+            return cleaned.strip()
+
+
+def _build_groq_reasoning_params(model_name: str) -> dict[str, Any]:
+    """Phân nhánh tham số reasoning theo tên model Groq."""
+    lowered = model_name.lower()
+    if "gpt-oss" in lowered:
+        return {"reasoning_effort": "low", "include_reasoning": False}
+    if "qwen" in lowered:
+        return {"reasoning_effort": "none", "reasoning_format": "hidden"}
+    return {}
+
+
 def _call_with_retry(
     fn: Callable[[], Any],
     *,
@@ -217,7 +380,38 @@ def _call_with_retry(
     sleep_fn: Callable[[float], None] | None = None,
 ) -> Any:
     """Gọi API với rate limit và retry tenacity tối đa 4 lần khi 429/5xx/timeout."""
-    wait_strategy = retry_wait or tenacity.wait_exponential(multiplier=1, min=1, max=16)
+    if retry_wait is not None:
+        wait_strategy = retry_wait
+    else:
+
+        def _wait_strategy(retry_state: tenacity.RetryCallState) -> float:
+            exc = retry_state.outcome.exception() if retry_state.outcome else None
+            is_429 = False
+            if groq is not None and isinstance(exc, groq.RateLimitError):
+                is_429 = True
+            elif (
+                groq is not None
+                and isinstance(exc, groq.APIStatusError)
+                and getattr(exc, "status_code", None) == 429
+            ):
+                is_429 = True
+            elif openai is not None and isinstance(exc, openai.RateLimitError):
+                is_429 = True
+            elif (
+                openai is not None
+                and isinstance(exc, openai.APIStatusError)
+                and getattr(exc, "status_code", None) == 429
+            ):
+                is_429 = True
+            elif isinstance(exc, genai_errors.APIError) and getattr(exc, "code", None) == 429:
+                is_429 = True
+
+            if is_429:
+                return float(tenacity.wait_exponential(multiplier=2, min=15, max=65)(retry_state))
+            return float(tenacity.wait_exponential(multiplier=1, min=1, max=16)(retry_state))
+
+        wait_strategy = _wait_strategy
+
     retrying_kwargs: dict[str, Any] = {
         "stop": tenacity.stop_after_attempt(MAX_API_ATTEMPTS),
         "retry": tenacity.retry_if_exception(_is_retryable_api_error),
@@ -232,7 +426,7 @@ def _call_with_retry(
         with attempt:
             rate_limiter.acquire(max_rpm)
             return fn()
-    raise RuntimeError("Không thể hoàn thành lời gọi Gemini sau khi thử lại.")
+    raise RuntimeError("Không thể hoàn thành lời gọi API sau khi thử lại.")
 
 
 def _round_grams(val: float, grams_min: float, grams_max: float) -> float:
@@ -525,18 +719,46 @@ def call_planner_llm(
     sleep_fn: Callable[[float], None] | None = None,
     settings: Settings | None = None,
 ) -> tuple[MealPlanLLM, dict[str, int]]:
-    """Gọi planner ở chế độ real (Gemini structured output) hoặc mock tất định."""
+    """Gọi planner ở chế độ real (Gemini / Groq / Alibaba) hoặc mock tất định."""
     cfg_settings = settings or get_settings()
     active_mode = mode or cfg_settings.LLM_MODE
     effective_days = profile.days if profile is not None else (days or 3)
+    provider = cfg_settings.LLM_PROVIDER.lower().strip()
+    is_groq = provider == "groq"
+    is_alibaba = provider == "alibaba"
+    if is_groq:
+        model_name = cfg_settings.GROQ_MODEL
+        trace_name = "groq_planner"
+    elif is_alibaba:
+        model_name = cfg_settings.ALIBABA_MODEL
+        trace_name = "alibaba_planner"
+    else:
+        model_name = cfg_settings.GEMINI_PLANNER_MODEL
+        trace_name = "gemini_planner"
 
     if active_mode == "mock":
-        plan = generate_mock_meal_plan(
-            days=effective_days,
-            allowed_foods=allowed_foods,
-            targets=targets,
-            force_violation=force_violation,
-        )
+        with trace_llm_generation(
+            name=trace_name,
+            model=model_name,
+            input_data={
+                "patient_code": profile.patient_code if profile else "ANON",
+                "mode": "mock",
+            },
+            metadata={"mode": "mock", "days": effective_days},
+            settings=cfg_settings,
+        ) as gen:
+            plan = generate_mock_meal_plan(
+                days=effective_days,
+                allowed_foods=allowed_foods,
+                targets=targets,
+                force_violation=force_violation,
+            )
+            gen.finish(
+                output={"days": len(plan.days), "cannot_plan": plan.cannot_plan},
+                tokens_in=0,
+                tokens_out=0,
+                metadata={"mode": "mock", "cache_hit": False, "est_cost_if_paid_usd": 0.0},
+            )
         return plan, {"tokens_in": 0, "tokens_out": 0}
 
     active_profile = profile or PatientProfile(
@@ -567,8 +789,8 @@ def call_planner_llm(
         needs=active_needs,
         allowed_foods=allowed_foods,
         violations=violations,
+        provider=provider,
     )
-    model_name = cfg_settings.GEMINI_PLANNER_MODEL
     resolved_cache_dir = Path(cache_dir or cfg_settings.LLM_CACHE_DIR)
     cache_enabled = bool(use_cache and str(resolved_cache_dir).strip())
     cache_key = _compute_cache_key(
@@ -579,83 +801,185 @@ def call_planner_llm(
         schema_payload=MealPlanLLM.model_json_schema(),
     )
 
-    if cache_enabled:
-        cached = _read_cache(resolved_cache_dir, cache_key)
-        if cached and "plan" in cached:
+    with trace_llm_generation(
+        name=trace_name,
+        model=model_name,
+        input_data=prompt,
+        metadata={"mode": active_mode, "patient_code": active_profile.patient_code},
+        model_parameters={"temperature": 0.2},
+        settings=cfg_settings,
+    ) as gen:
+        if cache_enabled:
+            cached = _read_cache(resolved_cache_dir, cache_key)
+            if cached and "plan" in cached:
+                try:
+                    plan_cached = MealPlanLLM.model_validate(cached["plan"])
+                    usage_cached = {
+                        "tokens_in": int((cached.get("usage") or {}).get("tokens_in", 0)),
+                        "tokens_out": int((cached.get("usage") or {}).get("tokens_out", 0)),
+                    }
+                    _, paid_est = estimate_cost_usd(
+                        tokens_in=usage_cached["tokens_in"],
+                        tokens_out=usage_cached["tokens_out"],
+                        model=model_name,
+                    )
+                    gen.finish(
+                        output={
+                            "days": len(plan_cached.days),
+                            "cannot_plan": plan_cached.cannot_plan,
+                        },
+                        tokens_in=usage_cached["tokens_in"],
+                        tokens_out=usage_cached["tokens_out"],
+                        metadata={
+                            "mode": active_mode,
+                            "cache_hit": True,
+                            "est_cost_if_paid_usd": paid_est,
+                        },
+                    )
+                    return plan_cached, usage_cached
+                except ValidationError:
+                    pass
+
+        if is_groq:
+            active_client = client if client is not None else _build_groq_client(cfg_settings)
+        elif is_alibaba:
+            active_client = client if client is not None else _build_alibaba_client(cfg_settings)
+        else:
+            active_client = client if client is not None else _build_genai_client(cfg_settings)
+
+        limiter = rate_limiter or _DEFAULT_RATE_LIMITER
+        rpm = cfg_settings.LLM_MAX_RPM if max_rpm is None else max_rpm
+
+        total_in = 0
+        total_out = 0
+        attempt_prompt = prompt
+
+        for json_attempt in range(MAX_JSON_RETRIES + 1):
+            if is_groq:
+                groq_params = _build_groq_reasoning_params(model_name)
+                response = _call_with_retry(
+                    lambda p=attempt_prompt, gp=groq_params: active_client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {"role": "system", "content": PLANNER_SYSTEM_INSTRUCTION},
+                            {"role": "user", "content": p},
+                        ],
+                        temperature=0.2,
+                        max_completion_tokens=950,
+                        response_format={"type": "json_object"},
+                        **gp,
+                    ),
+                    rate_limiter=limiter,
+                    max_rpm=rpm,
+                    retry_wait=retry_wait,
+                    sleep_fn=sleep_fn,
+                )
+            elif is_alibaba:
+                response = _call_with_retry(
+                    lambda p=attempt_prompt: active_client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {"role": "system", "content": PLANNER_SYSTEM_INSTRUCTION},
+                            {"role": "user", "content": p},
+                        ],
+                        temperature=0.2,
+                        top_p=0.8,
+                        max_tokens=3000,
+                        response_format={"type": "json_object"},
+                        extra_body={"enable_thinking": False},
+                    ),
+                    rate_limiter=limiter,
+                    max_rpm=rpm,
+                    retry_wait=retry_wait,
+                    sleep_fn=sleep_fn,
+                )
+            else:
+                gen_config = types.GenerateContentConfig(
+                    system_instruction=PLANNER_SYSTEM_INSTRUCTION,
+                    response_mime_type="application/json",
+                    response_schema=MealPlanLLM,
+                    temperature=0.2,
+                )
+                response = _call_with_retry(
+                    lambda p=attempt_prompt, cfg=gen_config: active_client.models.generate_content(
+                        model=model_name,
+                        contents=p,
+                        config=cfg,
+                    ),
+                    rate_limiter=limiter,
+                    max_rpm=rpm,
+                    retry_wait=retry_wait,
+                    sleep_fn=sleep_fn,
+                )
+
+            usage = _extract_usage(response)
+            total_in += usage["tokens_in"]
+            total_out += usage["tokens_out"]
+
             try:
-                plan_cached = MealPlanLLM.model_validate(cached["plan"])
-                usage_cached = {
-                    "tokens_in": int((cached.get("usage") or {}).get("tokens_in", 0)),
-                    "tokens_out": int((cached.get("usage") or {}).get("tokens_out", 0)),
-                }
-                return plan_cached, usage_cached
-            except ValidationError:
-                pass
-
-    active_client = client if client is not None else _build_genai_client(cfg_settings)
-    limiter = rate_limiter or _DEFAULT_RATE_LIMITER
-    rpm = cfg_settings.LLM_MAX_RPM if max_rpm is None else max_rpm
-
-    total_in = 0
-    total_out = 0
-    attempt_prompt = prompt
-
-    for json_attempt in range(MAX_JSON_RETRIES + 1):
-        gen_config = types.GenerateContentConfig(
-            system_instruction=PLANNER_SYSTEM_INSTRUCTION,
-            response_mime_type="application/json",
-            response_schema=MealPlanLLM,
-            temperature=0.2,
-        )
-        response = _call_with_retry(
-            lambda p=attempt_prompt, cfg=gen_config: active_client.models.generate_content(
-                model=model_name,
-                contents=p,
-                config=cfg,
-            ),
-            rate_limiter=limiter,
-            max_rpm=rpm,
-            retry_wait=retry_wait,
-            sleep_fn=sleep_fn,
-        )
-        usage = _extract_usage(response)
-        total_in += usage["tokens_in"]
-        total_out += usage["tokens_out"]
-
-        try:
-            plan = _parse_meal_plan_response(response)
-            final_usage = {"tokens_in": total_in, "tokens_out": total_out}
-            if cache_enabled:
-                _write_cache(
-                    resolved_cache_dir,
-                    cache_key,
-                    {
-                        "model": model_name,
-                        "plan": plan.model_dump(),
-                        "usage": final_usage,
+                plan = _parse_meal_plan_response(response, allowed_foods=allowed_foods)
+                final_usage = {"tokens_in": total_in, "tokens_out": total_out}
+                if cache_enabled:
+                    _write_cache(
+                        resolved_cache_dir,
+                        cache_key,
+                        {
+                            "model": model_name,
+                            "plan": plan.model_dump(),
+                            "usage": final_usage,
+                        },
+                    )
+                rec_cost, paid_est = estimate_cost_usd(
+                    tokens_in=total_in,
+                    tokens_out=total_out,
+                    model=model_name,
+                )
+                gen.finish(
+                    output={"days": len(plan.days), "cannot_plan": plan.cannot_plan},
+                    tokens_in=total_in,
+                    tokens_out=total_out,
+                    cost_details={"total": rec_cost},
+                    metadata={
+                        "mode": active_mode,
+                        "cache_hit": False,
+                        "est_cost_if_paid_usd": paid_est,
                     },
                 )
-            return plan, final_usage
-        except (ValueError, ValidationError, json.JSONDecodeError):
-            if json_attempt >= MAX_JSON_RETRIES:
-                return (
-                    MealPlanLLM(
+                return plan, final_usage
+            except (ValueError, ValidationError, json.JSONDecodeError):
+                if json_attempt >= MAX_JSON_RETRIES:
+                    fail_plan = MealPlanLLM(
                         days=[],
                         cannot_plan=True,
                         reason="LLM trả về JSON không hợp lệ sau 2 lần thử lại.",
-                    ),
-                    {"tokens_in": total_in, "tokens_out": total_out},
+                    )
+                    _, paid_est = estimate_cost_usd(
+                        tokens_in=total_in,
+                        tokens_out=total_out,
+                        model=model_name,
+                    )
+                    gen.finish(
+                        output={"cannot_plan": True},
+                        tokens_in=total_in,
+                        tokens_out=total_out,
+                        level="WARNING",
+                        metadata={
+                            "mode": active_mode,
+                            "cache_hit": False,
+                            "est_cost_if_paid_usd": paid_est,
+                        },
+                    )
+                    return fail_plan, {"tokens_in": total_in, "tokens_out": total_out}
+                attempt_prompt = (
+                    f"{prompt}\n\n"
+                    "LƯU Ý ĐỊNH DẠNG: Phản hồi trước không đúng JSON schema MealPlanLLM. "
+                    "Chỉ trả về duy nhất JSON hợp lệ theo schema."
                 )
-            attempt_prompt = (
-                f"{prompt}\n\n"
-                "LƯU Ý ĐỊNH DẠNG: Phản hồi trước không đúng JSON schema MealPlanLLM. "
-                "Chỉ trả về duy nhất JSON hợp lệ theo schema."
-            )
 
-    return (
-        MealPlanLLM(days=[], cannot_plan=True, reason="Không thể lập thực đơn."),
-        {"tokens_in": total_in, "tokens_out": total_out},
-    )
+        return (
+            MealPlanLLM(days=[], cannot_plan=True, reason="Không thể lập thực đơn."),
+            {"tokens_in": total_in, "tokens_out": total_out},
+        )
 
 
 def call_explain_llm(
@@ -676,23 +1000,50 @@ def call_explain_llm(
     sleep_fn: Callable[[float], None] | None = None,
     settings: Settings | None = None,
 ) -> tuple[str, dict[str, int]]:
-    """Sinh văn bản giải thích thực đơn (chế độ real dùng GEMINI_LIGHT_MODEL hoặc mock)."""
+    """Sinh văn bản giải thích thực đơn (Gemini / Groq / Alibaba hoặc mock)."""
     cfg_settings = settings or get_settings()
     active_mode = mode or cfg_settings.LLM_MODE
+    provider = cfg_settings.LLM_PROVIDER.lower().strip()
+    is_groq = provider == "groq"
+    is_alibaba = provider == "alibaba"
+    if is_groq:
+        model_name = cfg_settings.GROQ_MODEL
+        trace_name = "groq_explain"
+    elif is_alibaba:
+        model_name = cfg_settings.ALIBABA_MODEL
+        trace_name = "alibaba_explain"
+    else:
+        model_name = cfg_settings.GEMINI_LIGHT_MODEL
+        trace_name = "gemini_explain"
 
     if active_mode == "mock":
-        needs_str = ", ".join(needs.needs) if needs.needs else "duy_tri_can_bang"
-        lines = [
-            f"Thực đơn được xây dựng phù hợp với nhu cầu **{needs_str}** "
-            f"và mức năng lượng mục tiêu **{targets.target_kcal:.0f} kcal/ngày**.",
-        ]
-        if snippets:
-            for snip in snippets[:3]:
-                lines.append(
-                    f"- Khuyến nghị dinh dưỡng cho {snip.disease}: {snip.text[:120].strip()}... "
-                    f"[{snip.source_name}, tr. {snip.page}]"
-                )
-        return "\n".join(lines), {"tokens_in": 0, "tokens_out": 0}
+        with trace_llm_generation(
+            name=trace_name,
+            model=model_name,
+            input_data={"needs": needs.needs, "mode": "mock"},
+            metadata={"mode": "mock"},
+            settings=cfg_settings,
+        ) as gen:
+            needs_str = ", ".join(needs.needs) if needs.needs else "duy_tri_can_bang"
+            lines = [
+                f"Thực đơn được xây dựng phù hợp với nhu cầu **{needs_str}** "
+                f"và mức năng lượng mục tiêu **{targets.target_kcal:.0f} kcal/ngày**.",
+            ]
+            if snippets:
+                for snip in snippets[:3]:
+                    excerpt = snip.text[:120].strip()
+                    lines.append(
+                        f"- Khuyến nghị dinh dưỡng cho {snip.disease}: {excerpt}... "
+                        f"[{snip.source_name}, tr. {snip.page}]"
+                    )
+            out_text = "\n".join(lines)
+            gen.finish(
+                output={"length": len(out_text)},
+                tokens_in=0,
+                tokens_out=0,
+                metadata={"mode": "mock", "cache_hit": False, "est_cost_if_paid_usd": 0.0},
+            )
+            return out_text, {"tokens_in": 0, "tokens_out": 0}
 
     prompt = build_explain_prompt(
         needs=needs,
@@ -701,8 +1052,8 @@ def call_explain_llm(
         plan_scored=plan_scored,
         plan_llm=plan_llm,
         food_name_map=food_name_map,
+        provider=provider,
     )
-    model_name = cfg_settings.GEMINI_LIGHT_MODEL
     resolved_cache_dir = Path(cache_dir or cfg_settings.LLM_CACHE_DIR)
     cache_enabled = bool(use_cache and str(resolved_cache_dir).strip())
     cache_key = _compute_cache_key(
@@ -712,40 +1063,206 @@ def call_explain_llm(
         schema_name="explain_text",
     )
 
-    if cache_enabled:
-        cached = _read_cache(resolved_cache_dir, cache_key)
-        if cached and isinstance(cached.get("text"), str):
-            usage_cached = {
-                "tokens_in": int((cached.get("usage") or {}).get("tokens_in", 0)),
-                "tokens_out": int((cached.get("usage") or {}).get("tokens_out", 0)),
-            }
-            return str(cached["text"]), usage_cached
+    with trace_llm_generation(
+        name=trace_name,
+        model=model_name,
+        input_data=prompt,
+        metadata={"mode": active_mode},
+        model_parameters={"temperature": 0.2 if (is_groq or is_alibaba) else 0.3},
+        settings=cfg_settings,
+    ) as gen:
+        if cache_enabled:
+            cached = _read_cache(resolved_cache_dir, cache_key)
+            if cached and isinstance(cached.get("text"), str):
+                usage_cached = {
+                    "tokens_in": int((cached.get("usage") or {}).get("tokens_in", 0)),
+                    "tokens_out": int((cached.get("usage") or {}).get("tokens_out", 0)),
+                }
+                _, paid_est = estimate_cost_usd(
+                    tokens_in=usage_cached["tokens_in"],
+                    tokens_out=usage_cached["tokens_out"],
+                    model=model_name,
+                )
+                gen.finish(
+                    output={"length": len(str(cached["text"]))},
+                    tokens_in=usage_cached["tokens_in"],
+                    tokens_out=usage_cached["tokens_out"],
+                    metadata={
+                        "mode": active_mode,
+                        "cache_hit": True,
+                        "est_cost_if_paid_usd": paid_est,
+                    },
+                )
+                return str(cached["text"]), usage_cached
 
-    active_client = client if client is not None else _build_genai_client(cfg_settings)
-    limiter = rate_limiter or _DEFAULT_RATE_LIMITER
-    rpm = cfg_settings.LLM_MAX_RPM if max_rpm is None else max_rpm
+        if is_groq:
+            active_client = client if client is not None else _build_groq_client(cfg_settings)
+        elif is_alibaba:
+            active_client = client if client is not None else _build_alibaba_client(cfg_settings)
+        else:
+            active_client = client if client is not None else _build_genai_client(cfg_settings)
 
-    gen_config = types.GenerateContentConfig(
-        system_instruction=EXPLAIN_SYSTEM_INSTRUCTION,
-        temperature=0.3,
-    )
-    response = _call_with_retry(
-        lambda: active_client.models.generate_content(
+        limiter = rate_limiter or _DEFAULT_RATE_LIMITER
+        rpm = cfg_settings.LLM_MAX_RPM if max_rpm is None else max_rpm
+
+        if is_groq:
+            groq_params = _build_groq_reasoning_params(model_name)
+            response = _call_with_retry(
+                lambda gp=groq_params: active_client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": EXPLAIN_SYSTEM_INSTRUCTION},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.2,
+                    max_completion_tokens=950,
+                    response_format={"type": "json_object"},
+                    **gp,
+                ),
+                rate_limiter=limiter,
+                max_rpm=rpm,
+                retry_wait=retry_wait,
+                sleep_fn=sleep_fn,
+            )
+            text = _parse_explain_json_response(response)
+        elif is_alibaba:
+            response = _call_with_retry(
+                lambda: active_client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": EXPLAIN_SYSTEM_INSTRUCTION},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.2,
+                    top_p=0.8,
+                    max_tokens=3000,
+                    response_format={"type": "json_object"},
+                    extra_body={"enable_thinking": False},
+                ),
+                rate_limiter=limiter,
+                max_rpm=rpm,
+                retry_wait=retry_wait,
+                sleep_fn=sleep_fn,
+            )
+            text = _parse_explain_json_response(response)
+        else:
+            gen_config = types.GenerateContentConfig(
+                system_instruction=EXPLAIN_SYSTEM_INSTRUCTION,
+                temperature=0.3,
+            )
+            response = _call_with_retry(
+                lambda: active_client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=gen_config,
+                ),
+                rate_limiter=limiter,
+                max_rpm=rpm,
+                retry_wait=retry_wait,
+                sleep_fn=sleep_fn,
+            )
+            text = str(getattr(response, "text", None) or "").strip()
+
+        usage = _extract_usage(response)
+        if cache_enabled and text:
+            _write_cache(
+                resolved_cache_dir,
+                cache_key,
+                {"model": model_name, "text": text, "usage": usage},
+            )
+        rec_cost, paid_est = estimate_cost_usd(
+            tokens_in=usage["tokens_in"],
+            tokens_out=usage["tokens_out"],
             model=model_name,
-            contents=prompt,
-            config=gen_config,
-        ),
-        rate_limiter=limiter,
-        max_rpm=rpm,
+        )
+        gen.finish(
+            output={"length": len(text)},
+            tokens_in=usage["tokens_in"],
+            tokens_out=usage["tokens_out"],
+            cost_details={"total": rec_cost},
+            metadata={
+                "mode": active_mode,
+                "cache_hit": False,
+                "est_cost_if_paid_usd": paid_est,
+            },
+        )
+        return text, usage
+
+
+def plan_menu(
+    *,
+    days: int | None = None,
+    allowed_foods: list[dict[str, Any]],
+    targets: NutritionTargets,
+    profile: PatientProfile | None = None,
+    needs: NeedsResult | None = None,
+    violations: list[Any] | None = None,
+    force_violation: bool = False,
+    mode: str | None = None,
+    client: Any | None = None,
+    cache_dir: str | Path | None = None,
+    use_cache: bool = True,
+    max_rpm: int | None = None,
+    rate_limiter: _RateLimiter | None = None,
+    retry_wait: Any = None,
+    sleep_fn: Callable[[float], None] | None = None,
+    settings: Settings | None = None,
+) -> tuple[DraftMenu, dict[str, int]]:
+    """Alias cho call_planner_llm trả về (DraftMenu, usage)."""
+    return call_planner_llm(
+        days=days,
+        allowed_foods=allowed_foods,
+        targets=targets,
+        profile=profile,
+        needs=needs,
+        violations=violations,
+        force_violation=force_violation,
+        mode=mode,
+        client=client,
+        cache_dir=cache_dir,
+        use_cache=use_cache,
+        max_rpm=max_rpm,
+        rate_limiter=rate_limiter,
         retry_wait=retry_wait,
         sleep_fn=sleep_fn,
+        settings=settings,
     )
-    text = str(getattr(response, "text", None) or "").strip()
-    usage = _extract_usage(response)
-    if cache_enabled and text:
-        _write_cache(
-            resolved_cache_dir,
-            cache_key,
-            {"model": model_name, "text": text, "usage": usage},
-        )
-    return text, usage
+
+
+def explain_menu(
+    *,
+    needs: NeedsResult,
+    targets: NutritionTargets,
+    snippets: list[GuidelineSnippet],
+    plan_scored: list[dict[str, Any]] | None = None,
+    plan_llm: MealPlanLLM | None = None,
+    food_name_map: dict[int, str] | None = None,
+    mode: str | None = None,
+    client: Any | None = None,
+    cache_dir: str | Path | None = None,
+    use_cache: bool = True,
+    max_rpm: int | None = None,
+    rate_limiter: _RateLimiter | None = None,
+    retry_wait: Any = None,
+    sleep_fn: Callable[[float], None] | None = None,
+    settings: Settings | None = None,
+) -> tuple[ExplainOutput, dict[str, int]]:
+    """Sinh văn bản giải thích thực đơn và trả về (ExplainOutput, usage)."""
+    text, usage = call_explain_llm(
+        needs=needs,
+        targets=targets,
+        snippets=snippets,
+        plan_scored=plan_scored,
+        plan_llm=plan_llm,
+        food_name_map=food_name_map,
+        mode=mode,
+        client=client,
+        cache_dir=cache_dir,
+        use_cache=use_cache,
+        max_rpm=max_rpm,
+        rate_limiter=rate_limiter,
+        retry_wait=retry_wait,
+        sleep_fn=sleep_fn,
+        settings=settings,
+    )
+    return ExplainOutput(explanation_md=text), usage

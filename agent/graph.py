@@ -1,6 +1,7 @@
 """Lắp ghép LangGraph 11 node với SqliteSaver checkpointer và API công khai (SPEC 9.1–9.2)."""
 
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -8,6 +9,7 @@ from uuid import uuid4
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
+from pydantic import ValidationError
 
 from agent.nodes import (
     await_review,
@@ -26,6 +28,16 @@ from agent.state import AgentState
 from agent.tools_gateway import ToolsGateway
 from config.settings import get_settings
 from core.schemas import PatientProfile
+from guardrails.input import validate_profile_input
+from observability.querylog import estimate_cost_usd, upsert_query_log
+from observability.tracing import (
+    create_request_trace_id,
+    get_langfuse_client,
+    record_trace_scores,
+    safe_flush,
+    trace_node,
+    trace_request,
+)
 
 MAX_RETRIES = 2
 
@@ -64,21 +76,74 @@ def _route_after_output_guardrail(state: AgentState) -> str:
     return "await_review"
 
 
+def _summarize_state_for_trace(state: AgentState) -> dict[str, Any]:
+    """Tóm tắt state an toàn (không chứa display_name hay preferences_text gốc) cho span."""
+    profile = state.get("profile")
+    p_code = profile.patient_code if isinstance(profile, PatientProfile) else ""
+    pref_len = len(profile.preferences_text) if isinstance(profile, PatientProfile) else 0
+    return {
+        "patient_code": p_code,
+        "status": state.get("status", "draft"),
+        "retry_count": int(state.get("retry_count", 0)),
+        "input_flags": list(state.get("input_flags") or []),
+        "output_flags": list(state.get("output_flags") or []),
+        "preferences_length": pref_len,
+    }
+
+
+def _summarize_output_for_trace(out: dict[str, Any] | None) -> dict[str, Any]:
+    """Tóm tắt đầu ra node an toàn (chỉ lấy metadata/trạng thái) cho span Langfuse."""
+    if not out:
+        return {}
+    summary: dict[str, Any] = {}
+    for key in ("status", "retry_count", "input_flags", "output_flags", "meal_plan_id"):
+        if key in out:
+            summary[key] = out[key]
+    if "violations" in out and out["violations"] is not None:
+        summary["violation_codes"] = [getattr(v, "code", str(v)) for v in out["violations"]]
+    if "snippets" in out and out["snippets"] is not None:
+        summary["snippets_count"] = len(out["snippets"])
+    if "allowed_foods" in out and out["allowed_foods"] is not None:
+        summary["allowed_foods_count"] = len(out["allowed_foods"])
+    if "plan_scored" in out and out["plan_scored"] is not None:
+        summary["days_scored"] = len(out["plan_scored"])
+    return summary
+
+
+def _traced_node(
+    node_name: str,
+    fn: Callable[[AgentState], dict[str, Any]],
+) -> Callable[[AgentState], dict[str, Any]]:
+    """Bọc một node LangGraph để tự động mở span con trên trace Langfuse hiện tại."""
+
+    def _wrapped(state: AgentState) -> dict[str, Any]:
+        with trace_node(node_name, input_summary=_summarize_state_for_trace(state)) as span:
+            out = fn(state)
+            span.update(output=_summarize_output_for_trace(out))
+            return out
+
+    return _wrapped
+
+
 def build_graph(gateway: ToolsGateway, checkpointer: Any = None) -> Any:
     """Xây dựng và compile StateGraph đủ 11 node theo SPEC mục 9.1–9.2."""
     builder = StateGraph(AgentState)
 
-    builder.add_node("intake", intake)
-    builder.add_node("input_guardrail", input_guardrail)
-    builder.add_node("classify", lambda s: classify(s, gateway))
-    builder.add_node("retrieve", lambda s: retrieve(s, gateway))
-    builder.add_node("plan", lambda s: plan(s, gateway))
-    builder.add_node("portion_adjust", portion_adjust)
-    builder.add_node("verify", lambda s: verify(s, gateway))
-    builder.add_node("explain", explain)
-    builder.add_node("output_guardrail", output_guardrail)
-    builder.add_node("await_review", lambda s: await_review(s, gateway))
-    builder.add_node("finalize", lambda s: finalize(s, gateway))
+    builder.add_node("intake", _traced_node("intake", intake))
+    builder.add_node("input_guardrail", _traced_node("input_guardrail", input_guardrail))
+    builder.add_node("classify", _traced_node("classify", lambda s: classify(s, gateway)))
+    builder.add_node("retrieve", _traced_node("retrieve", lambda s: retrieve(s, gateway)))
+    builder.add_node("plan", _traced_node("plan", lambda s: plan(s, gateway)))
+    builder.add_node("portion_adjust", _traced_node("portion_adjust", portion_adjust))
+    builder.add_node("verify", _traced_node("verify", lambda s: verify(s, gateway)))
+    builder.add_node("explain", _traced_node("explain", explain))
+    builder.add_node(
+        "output_guardrail", _traced_node("output_guardrail", lambda s: output_guardrail(s, gateway))
+    )
+    builder.add_node(
+        "await_review", _traced_node("await_review", lambda s: await_review(s, gateway))
+    )
+    builder.add_node("finalize", _traced_node("finalize", lambda s: finalize(s, gateway)))
 
     builder.add_edge(START, "intake")
     builder.add_edge("intake", "input_guardrail")
@@ -130,47 +195,211 @@ def run_request(
     input_flags: list[str] | None = None,
 ) -> dict[str, Any]:
     """Chạy luồng từ đầu đến khi gặp interrupt (await_review) hoặc kết thúc (finalize)."""
-    db_path = checkpoint_db or get_settings().CHECKPOINT_DB
+    cfg_settings = get_settings()
+    db_path = checkpoint_db or cfg_settings.CHECKPOINT_DB
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
     resolved_thread_id = thread_id or f"thread-{uuid4().hex[:12]}"
     resolved_session_id = session_id or f"sess-{uuid4().hex[:12]}"
-    valid_profile = (
-        profile
-        if isinstance(profile, PatientProfile)
-        else PatientProfile.model_validate(profile)
-    )
+    resolved_trace_id = create_request_trace_id(resolved_thread_id)
+    effective_tools_mode = tools_mode or cfg_settings.TOOLS_MODE
+    effective_llm_mode = cfg_settings.LLM_MODE
 
-    initial_state: AgentState = {
-        "session_id": resolved_session_id,
-        "thread_id": resolved_thread_id,
-        "profile": valid_profile,
-        "retry_count": 0,
-        "input_flags": list(input_flags or []),
-        "output_flags": [],
-        "trace_notes": [],
-        "mock_force_violation": mock_force_violation,
-    }
-    config = {"configurable": {"thread_id": resolved_thread_id}}
+    if isinstance(profile, PatientProfile):
+        patient_code = profile.patient_code
+        raw_display_name = ""
+        raw_pref_text = profile.preferences_text
+        raw_conditions = list(profile.conditions)
+        raw_days = profile.days
+    else:
+        patient_code = str(profile.get("patient_code", "UNKNOWN"))
+        raw_display_name = str(profile.get("display_name", ""))
+        raw_pref_text = str(profile.get("preferences_text", ""))
+        raw_conditions = list(profile.get("conditions") or [])
+        raw_days = int(profile.get("days", 3) or 3)
 
     t0 = time.perf_counter()
-    with ToolsGateway(mode=tools_mode) as gw, SqliteSaver.from_conn_string(db_path) as checkpointer:
-        graph = build_graph(gw, checkpointer=checkpointer)
-        raw_result = graph.invoke(initial_state, config=config)
-        result = dict(raw_result)
 
-    elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
-    metrics = dict(result.get("metrics") or {})
-    metrics["latency_ms"] = elapsed_ms
-    result["metrics"] = metrics
+    with trace_request(
+        trace_id=resolved_trace_id,
+        session_id=resolved_session_id,
+        patient_code=patient_code,
+        input_summary={
+            "patient_code": patient_code,
+            "conditions": raw_conditions,
+            "days": raw_days,
+            "preferences_length": len(raw_pref_text),
+            "input_flags": list(input_flags or []),
+        },
+        metadata={
+            "tools_mode": effective_tools_mode,
+            "llm_mode": effective_llm_mode,
+            "thread_id": resolved_thread_id,
+        },
+        display_name=raw_display_name,
+        preferences_text=raw_pref_text,
+        settings=cfg_settings,
+    ) as root_span:
+        if isinstance(profile, PatientProfile):
+            valid_profile: PatientProfile | None = profile
+            validation_err = None
+        else:
+            try:
+                valid_profile = PatientProfile.model_validate(profile)
+                validation_err = None
+            except ValidationError:
+                valid_profile = None
+                _, validation_err = validate_profile_input(
+                    profile,
+                    session_id=resolved_session_id,
+                    log_events=True,
+                )
 
-    if "__interrupt__" in result and result.get("meal_plan_id") is None:
-        interrupts = result["__interrupt__"]
-        if interrupts:
-            first_val = getattr(interrupts[0], "value", None)
-            if isinstance(first_val, dict) and "meal_plan_id" in first_val:
-                result["meal_plan_id"] = first_val["meal_plan_id"]
+        if valid_profile is None and validation_err is not None:
+            elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            blocked_res: dict[str, Any] = {
+                "session_id": resolved_session_id,
+                "thread_id": resolved_thread_id,
+                "trace_id": resolved_trace_id,
+                "status": "blocked",
+                "input_flags": list(validation_err.flags),
+                "output_flags": [],
+                "violations": [],
+                "retry_count": 0,
+                "explanation_md": validation_err.blocked_message_vi,
+                "meal_plan_id": None,
+                "metrics": {
+                    "llm_calls": 0,
+                    "tokens_in": 0,
+                    "tokens_out": 0,
+                    "est_cost_usd": 0.0,
+                    "est_cost_if_paid_usd": 0.0,
+                    "latency_ms": elapsed_ms,
+                },
+                "trace_notes": [f"input_guardrail: {validation_err.events[0][1]}"],
+            }
+            root_span.update(
+                output={"status": "blocked", "input_flags": list(validation_err.flags)},
+                metadata={
+                    "retry_count": 0,
+                    "violation_codes": [],
+                    "tools_mode": effective_tools_mode,
+                    "llm_mode": effective_llm_mode,
+                    "status": "blocked",
+                },
+            )
+            record_trace_scores(
+                trace_id=resolved_trace_id,
+                status="blocked",
+                retry_count=0,
+                settings=cfg_settings,
+            )
+            upsert_query_log(
+                session_id=resolved_session_id,
+                patient_code=patient_code,
+                status="blocked",
+                meal_plan_id=None,
+                latency_ms=elapsed_ms,
+                llm_calls=0,
+                tokens_in=0,
+                tokens_out=0,
+                est_cost_usd=0.0,
+                retry_count=0,
+                violation_codes="",
+                trace_id=resolved_trace_id,
+            )
+            safe_flush(get_langfuse_client(cfg_settings))
+            return blocked_res
 
+        assert valid_profile is not None
+        initial_state: AgentState = {
+            "session_id": resolved_session_id,
+            "thread_id": resolved_thread_id,
+            "trace_id": resolved_trace_id,
+            "profile": valid_profile,
+            "retry_count": 0,
+            "input_flags": list(input_flags or []),
+            "output_flags": [],
+            "trace_notes": [],
+            "mock_force_violation": mock_force_violation,
+        }
+        config = {"configurable": {"thread_id": resolved_thread_id}}
+
+        with ToolsGateway(mode=tools_mode) as gw, SqliteSaver.from_conn_string(db_path) as ckpt:
+            graph = build_graph(gw, checkpointer=ckpt)
+            raw_result = graph.invoke(initial_state, config=config)
+            result = dict(raw_result)
+
+        if "__interrupt__" in result and result.get("meal_plan_id") is None:
+            interrupts = result["__interrupt__"]
+            if interrupts:
+                first_val = getattr(interrupts[0], "value", None)
+                if isinstance(first_val, dict) and "meal_plan_id" in first_val:
+                    result["meal_plan_id"] = first_val["meal_plan_id"]
+
+        elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+        metrics = dict(result.get("metrics") or {})
+        tokens_in = int(metrics.get("tokens_in", 0))
+        tokens_out = int(metrics.get("tokens_out", 0))
+        recorded_cost, paid_est = estimate_cost_usd(
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            model_usage=metrics.get("model_usage"),
+        )
+        metrics["latency_ms"] = elapsed_ms
+        metrics["est_cost_usd"] = recorded_cost
+        metrics["est_cost_if_paid_usd"] = paid_est
+        result["metrics"] = metrics
+        result["trace_id"] = resolved_trace_id
+
+        final_status = str(result.get("status", "draft"))
+        violations = result.get("violations") or []
+        violation_codes_list = [getattr(v, "code", str(v)) for v in violations]
+        retry_count = int(result.get("retry_count", 0))
+
+        root_span.update(
+            output={
+                "status": final_status,
+                "meal_plan_id": result.get("meal_plan_id"),
+                "input_flags": list(result.get("input_flags") or []),
+                "output_flags": list(result.get("output_flags") or []),
+                "violation_codes": violation_codes_list,
+            },
+            metadata={
+                "retry_count": retry_count,
+                "violation_codes": violation_codes_list,
+                "tools_mode": effective_tools_mode,
+                "llm_mode": effective_llm_mode,
+                "status": final_status,
+                "est_cost_if_paid_usd": paid_est,
+            },
+        )
+        record_trace_scores(
+            trace_id=resolved_trace_id,
+            status=final_status,
+            violations=violations,
+            retry_count=retry_count,
+            targets=result.get("targets"),
+            plan_scored=result.get("plan_scored"),
+            settings=cfg_settings,
+        )
+        upsert_query_log(
+            session_id=resolved_session_id,
+            patient_code=valid_profile.patient_code,
+            status=final_status,
+            meal_plan_id=result.get("meal_plan_id"),
+            latency_ms=elapsed_ms,
+            llm_calls=int(metrics.get("llm_calls", 0)),
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            est_cost_usd=recorded_cost,
+            retry_count=retry_count,
+            violation_codes=",".join(violation_codes_list),
+            trace_id=resolved_trace_id,
+            model_usage=metrics.get("model_usage"),
+        )
+
+    safe_flush(get_langfuse_client(cfg_settings))
     return result
 
 
@@ -185,8 +414,11 @@ def resume_review(
     tools_mode: str | None = None,
 ) -> dict[str, Any]:
     """Tiếp tục luồng sau interrupt (await_review) bằng Command(resume=...)."""
-    db_path = checkpoint_db or get_settings().CHECKPOINT_DB
+    cfg_settings = get_settings()
+    db_path = checkpoint_db or cfg_settings.CHECKPOINT_DB
     config = {"configurable": {"thread_id": thread_id}}
+    effective_tools_mode = tools_mode or cfg_settings.TOOLS_MODE
+    effective_llm_mode = cfg_settings.LLM_MODE
 
     if isinstance(decision, dict):
         review_payload: dict[str, Any] = dict(decision)
@@ -202,7 +434,91 @@ def resume_review(
             "reviewer_name": reviewer_name,
         }
 
+    t0 = time.perf_counter()
+    resolved_trace_id = create_request_trace_id(thread_id)
+    session_id = f"sess-{thread_id}"
+    patient_code = "UNKNOWN"
+    raw_pref_text = ""
+
     with ToolsGateway(mode=tools_mode) as gw, SqliteSaver.from_conn_string(db_path) as checkpointer:
         graph = build_graph(gw, checkpointer=checkpointer)
-        raw_result = graph.invoke(Command(resume=review_payload), config=config)
-        return dict(raw_result)
+        snapshot = graph.get_state(config)
+        snap_vals = snapshot.values if snapshot and isinstance(snapshot.values, dict) else {}
+        if snap_vals.get("trace_id"):
+            resolved_trace_id = str(snap_vals["trace_id"])
+        if snap_vals.get("session_id"):
+            session_id = str(snap_vals["session_id"])
+        snap_profile = snap_vals.get("profile")
+        if isinstance(snap_profile, PatientProfile):
+            patient_code = snap_profile.patient_code
+            raw_pref_text = snap_profile.preferences_text
+
+        with trace_request(
+            trace_id=resolved_trace_id,
+            session_id=session_id,
+            patient_code=patient_code,
+            input_summary={"phase": "resume_review", "decision": review_payload.get("decision")},
+            metadata={
+                "tools_mode": effective_tools_mode,
+                "llm_mode": effective_llm_mode,
+                "thread_id": thread_id,
+            },
+            preferences_text=raw_pref_text,
+            settings=cfg_settings,
+        ) as root_span:
+            raw_result = graph.invoke(Command(resume=review_payload), config=config)
+            result = dict(raw_result)
+            elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            metrics = dict(result.get("metrics") or {})
+            metrics["latency_ms"] = round(float(metrics.get("latency_ms", 0.0)) + elapsed_ms, 2)
+            result["metrics"] = metrics
+            result["trace_id"] = resolved_trace_id
+
+            final_status = str(result.get("status", "approved"))
+            violations = result.get("violations") or []
+            v_codes = [getattr(v, "code", str(v)) for v in violations]
+            retry_count = int(result.get("retry_count", 0))
+
+            root_span.update(
+                output={"status": final_status, "meal_plan_id": result.get("meal_plan_id")},
+                metadata={
+                    "retry_count": retry_count,
+                    "violation_codes": v_codes,
+                    "tools_mode": effective_tools_mode,
+                    "llm_mode": effective_llm_mode,
+                    "status": final_status,
+                },
+            )
+            record_trace_scores(
+                trace_id=resolved_trace_id,
+                status=final_status,
+                violations=violations,
+                retry_count=retry_count,
+                targets=result.get("targets"),
+                plan_scored=result.get("plan_scored"),
+                review_decision=str(review_payload.get("decision", "approve")),
+                settings=cfg_settings,
+            )
+
+    res_profile = result.get("profile")
+    res_pcode = (
+        res_profile.patient_code if isinstance(res_profile, PatientProfile) else patient_code
+    )
+    upsert_query_log(
+        session_id=str(result.get("session_id", session_id)),
+        patient_code=res_pcode,
+        status=str(result.get("status", "approved")),
+        meal_plan_id=result.get("meal_plan_id"),
+        latency_ms=float((result.get("metrics") or {}).get("latency_ms", elapsed_ms)),
+        llm_calls=int((result.get("metrics") or {}).get("llm_calls", 0)),
+        tokens_in=int((result.get("metrics") or {}).get("tokens_in", 0)),
+        tokens_out=int((result.get("metrics") or {}).get("tokens_out", 0)),
+        retry_count=int(result.get("retry_count", 0)),
+        violation_codes=",".join(
+            getattr(v, "code", str(v)) for v in (result.get("violations") or [])
+        ),
+        trace_id=resolved_trace_id,
+        model_usage=(result.get("metrics") or {}).get("model_usage"),
+    )
+    safe_flush(get_langfuse_client(cfg_settings))
+    return result

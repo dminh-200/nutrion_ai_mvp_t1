@@ -1,9 +1,15 @@
 .env
 .venv/
 db/*.db
+db/*.db-wal
+db/*.db-shm
 db/*.sqlite
+db/*.sqlite-wal
+db/*.sqlite-shm
 rag/chroma/
 .cache/
+.pytest_cache/
+.ruff_cache/
 evals/out/
 __pycache__/
 *.pyc

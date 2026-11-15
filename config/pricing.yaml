@@ -1,0 +1,18 @@
+version: 1
+
+# Gói mặc định tuân thủ NFR10: chi phí thực tế ghi 0 USD, nhưng vẫn tính ước tính nếu trả phí
+billing_tier: free
+
+models:
+  gemini-3.8-flash:
+    input_per_1m_usd: 0.15
+    output_per_1m_usd: 0.60
+  gemini-3.5-flash-lite:
+    input_per_1m_usd: 0.075
+    output_per_1m_usd: 0.30
+  qwen/qwen3.8-27b:
+    input_per_1m_usd: 0.20
+    output_per_1m_usd: 0.60
+  default:
+    input_per_1m_usd: 0.15
+    output_per_1m_usd: 0.60

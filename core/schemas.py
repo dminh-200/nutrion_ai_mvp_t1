@@ -1,8 +1,8 @@
 """Schema Pydantic dùng chung giữa các module trong nutrition-ai-mvp."""
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 ConditionCode = Literal["t2d", "htn", "gout", "obesity"]
 AllergenCode = Literal["seafood", "peanut", "milk", "egg", "gluten", "soy"]
@@ -69,12 +69,48 @@ class PlannedItem(BaseModel):
     food_id: int = Field(..., ge=1)
     grams: float = Field(..., ge=0.0)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_food_id(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            fid = data.get("food_id")
+            if isinstance(fid, str) and fid.isdigit():
+                data["food_id"] = int(fid)
+        return data
+
+
+MEAL_TYPE_MAP: dict[str, MealType] = {
+    "sang": "breakfast",
+    "bua_sang": "breakfast",
+    "breakfast": "breakfast",
+    "trua": "lunch",
+    "bua_trua": "lunch",
+    "lunch": "lunch",
+    "toi": "dinner",
+    "bua_toi": "dinner",
+    "dinner": "dinner",
+    "snack": "snack",
+    "phu": "snack",
+    "bua_phu": "snack",
+}
+
 
 class Meal(BaseModel):
     """Một bữa ăn trong ngày."""
 
     meal: MealType
     items: list[PlannedItem] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_meal_type(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            m = data.get("meal")
+            if isinstance(m, str):
+                normalized = m.strip().lower()
+                if normalized in MEAL_TYPE_MAP:
+                    data["meal"] = MEAL_TYPE_MAP[normalized]
+        return data
 
 
 class DayPlan(BaseModel):
@@ -90,6 +126,28 @@ class MealPlanLLM(BaseModel):
     days: list[DayPlan] = Field(default_factory=list)
     cannot_plan: bool = False
     reason: str = ""
+
+
+DraftMenu = MealPlanLLM
+
+
+class ExplainOutput(BaseModel):
+    """Cấu trúc JSON phản hồi giải thích thực đơn khi dùng provider yêu cầu json_object."""
+
+    explanation_md: str = Field(
+        default="", description="Nội dung giải thích thực đơn bằng markdown"
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "explanation_md" not in data:
+                for k in ("explanation", "text", "content", "markdown", "message"):
+                    if k in data and isinstance(data[k], str):
+                        data["explanation_md"] = data[k]
+                        break
+        return data
 
 
 class ScoredItem(PlannedItem):

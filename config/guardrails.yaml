@@ -1,0 +1,222 @@
+version: 1
+
+disclaimer_vi: >
+  *Lưu ý: Thực đơn chỉ mang tính tham khảo hỗ trợ dinh dưỡng, không thay thế chẩn đoán hoặc chỉ định điều trị của bác sĩ.*
+
+bmi_bounds:
+  min: 10.0
+  max: 80.0
+
+injection:
+  keywords:
+    # Tiếng Việt có dấu & không dấu (được chuẩn hóa unidecode + lowercase)
+    - "bo qua huong dan"
+    - "bo qua moi huong dan"
+    - "bo qua tat ca huong dan"
+    - "bo qua quy tac"
+    - "bo qua rang buoc"
+    - "quen het huong dan"
+    - "quen tat ca chi dan"
+    - "quen vai tro cu"
+    - "ban la admin"
+    - "ban la quan tri vien"
+    - "tro thanh quan tri"
+    - "tiet lo prompt"
+    - "tiet lo system prompt"
+    - "in ra prompt"
+    - "hien thi prompt"
+    - "hien thi lenh he thong"
+    - "xem cau hinh he thong"
+    - "vo hieu hoa an toan"
+    - "tat kiem tra an toan"
+    - "vuot rao an toan"
+    - "khong can tuan theo quy tac"
+    # Tiếng Anh
+    - "ignore previous"
+    - "ignore all previous"
+    - "ignore all instructions"
+    - "disregard previous"
+    - "disregard all rules"
+    - "forget your instructions"
+    - "override instructions"
+    - "system prompt"
+    - "developer prompt"
+    - "reveal your prompt"
+    - "show your prompt"
+    - "print system message"
+    - "you are now admin"
+    - "act as root"
+    - "jailbreak"
+    - "developer mode"
+    - "dan mode"
+    - "bypass safety"
+    - "override safety"
+    # Biến thể lỗi chính tả cố ý / leetspeak
+    - "bo qa huong dan"
+    - "bo qua chi dan truoc"
+    - "ignore prevous"
+    - "ignre previous"
+    - "systm prompt"
+    - "systemprompt"
+    - "tiet lo promp"
+    - "devloper mode"
+    - "bypas safety"
+  regex_patterns:
+    - '(?i)ignore\s+(all\s+)?(prev\w*|above|prior)\s*(instruct\w*|prompt\w*|rule\w*)?'
+    - '(?i)disregard\s+(all\s+)?(prev\w*|prior|system)\s*(instruct\w*|rule\w*|prompt\w*)?'
+    - '(?i)(bo|quen|xoa|huy)\s+q?u?a?\s*(moi|het|tat\s*ca)?\s*(huong|chi|quy)\s*(dan|tac)'
+    - '(?i)(tiet|lo|in|xem|hien\s*thi|doc)\s*(ra\s*)?(system\s*|he\s*thong\s*)?prompt'
+    - '(?i)(dong\s*vai|tro\s*thanh|bat\s*che\s*do)\s*(admin|hacker|root|khong\s*gioi\s*han|developer)'
+    - '(?i)<\s*/?\s*(system|instruction|admin|prompt)\s*>'
+
+medical_advice:
+  keywords:
+    - "ke don"
+    - "ke toa"
+    - "cho don thuoc"
+    - "toa thuoc"
+    - "uong thuoc gi"
+    - "dung thuoc gi"
+    - "thay doi lieu"
+    - "chinh lieu"
+    - "tang lieu"
+    - "giam lieu"
+    - "ngung thuoc"
+    - "bo thuoc"
+    - "lieu luong thuoc"
+    - "mg thuoc"
+    - "chan doan giup"
+    - "chan doan xem toi bi"
+    - "toi bi benh gi"
+    - "xet nghiem xem"
+    - "metformin"
+    - "insulin"
+    - "glibenclamide"
+    - "glimepiride"
+    - "losartan"
+    - "amlodipine"
+    - "allopurinol"
+    - "febuxostat"
+    - "colchicine"
+    - "atorvastatin"
+    - "chua dut diem"
+    - "chua khoi han"
+    - "prescribe"
+    - "dosage"
+    - "diagnose me"
+  regex_patterns:
+    - '(?i)\b(ke\s+don|ke\s+toa|chinh\s+lieu|tang\s+lieu|giam\s+lieu|ngung\s+thuoc)\b'
+    - '(?i)\b(chan\s+doan\s+(giup|cho|benh)|toi\s+co\s+bi\s+benh)\b'
+    - '(?i)\b(uong|tiem|dung)\s+\d+\s*(mg|mcg|iu|ui|ml|vien)\b'
+    - '(?i)\b\d+\s*(mg|mcg|iu|ui|ml)\s*(metformin|insulin|losartan|amlodipine|allopurinol|colchicine|thuoc)\b'
+
+off_topic:
+  min_length_for_topic_check: 80
+  keywords:
+    - "lap trinh"
+    - "viet code"
+    - "python"
+    - "javascript"
+    - "sql query"
+    - "bitcoin"
+    - "tien ao"
+    - "crypto"
+    - "chung khoan"
+    - "co phieu"
+    - "forex"
+    - "xo so"
+    - "ca cuoc"
+    - "bong da"
+    - "lam tho"
+    - "viet van"
+    - "giai toan"
+    - "phuong trinh"
+    - "dich tieng anh"
+    - "du bao thoi tiet"
+    - "tin tuc chinh tri"
+    - "bau cu"
+    - "tong thong"
+    - "choi game"
+  regex_patterns:
+    - '(?i)\b(viet|sua|giai)\s+(code|bai\s*tap|toan|tho|nhac|van)\b'
+    - '(?i)\b(gia|du\s*doan)\s+(bitcoin|co\s*phieu|chung\s*khoan|thoi\s*tiet)\b'
+  nutrition_keywords:
+    - "an"
+    - "uong"
+    - "mon"
+    - "thuc don"
+    - "khau phan"
+    - "bua"
+    - "com"
+    - "chao"
+    - "pho"
+    - "bun"
+    - "thit"
+    - "ca"
+    - "ga"
+    - "trung"
+    - "sua"
+    - "rau"
+    - "cu"
+    - "qua"
+    - "trai cay"
+    - "dau"
+    - "muoi"
+    - "duong"
+    - "dam"
+    - "beo"
+    - "tinh bot"
+    - "xo"
+    - "natri"
+    - "purin"
+    - "kcal"
+    - "calo"
+    - "nang luong"
+    - "chay"
+    - "man"
+    - "ngot"
+    - "cay"
+    - "chua"
+    - "nhat"
+    - "kieng"
+    - "di ung"
+    - "hai san"
+    - "tom"
+    - "cua"
+    - "lac"
+    - "dau nanh"
+    - "giam can"
+    - "tang can"
+    - "tieu duong"
+    - "huyet ap"
+    - "gout"
+    - "beo phi"
+    - "dinh duong"
+    - "che do"
+    - "thich"
+    - "khong thich"
+    - "han che"
+    - "eat"
+    - "food"
+    - "meal"
+    - "diet"
+    - "allergy"
+
+forbidden_output:
+  keywords:
+    - "chua khoi"
+    - "chua dut diem"
+    - "khoi han"
+    - "cam ket khoi"
+    - "dam bao khoi benh"
+    - "thay the thuoc"
+    - "ngung uong thuoc"
+    - "ngung tiem insulin"
+    - "tu bo phac do"
+  regex_patterns:
+    - '(?i)\b(metformin|insulin|glibenclamide|glimepiride|losartan|amlodipine|allopurinol|febuxostat|colchicine|atorvastatin|statin)\b[^.\n]*\b\d+\s*(mg|mcg|iu|ui|ml|vien)\b'
+    - '(?i)\b\d+\s*(mg|mcg|iu|ui|ml)\s*(metformin|insulin|losartan|amlodipine|allopurinol|colchicine|thuoc)\b'
+    - '(?i)\b(uong|tiem|dung|tang|giam|chia)\s+(lieu\s+)?\d+\s*(mg|mcg|iu|ui|ml|vien)\b'
+    - '(?i)\b(toi|he\s*thong)\s+chan\s+doan\s+(ban|quy\s*vi)\b'
+    - '(?i)\bchan\s+doan\s+(xac\s*dinh|mac\s+benh|chinh\s*xac)\b'
+    - '(?i)\b(cam\s*ket|dam\s*bao|chac\s*chan)\s+(chua\s+)?(khoi|het\s+benh)\b'

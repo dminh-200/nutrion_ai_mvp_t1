@@ -9,13 +9,12 @@ from google.genai import errors as genai_errors
 from langgraph.types import interrupt
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
-from unidecode import unidecode
 
 from agent.llm import LLMConfigError, call_explain_llm, call_planner_llm
 from agent.state import AgentState
 from agent.tools_gateway import ToolsGateway
 from agent.verifier import verify_meal_plan
-from core.classify import assess_risk
+from config.settings import get_settings
 from core.nutrition import load_rules
 from core.portion import adjust_portions
 from core.schemas import (
@@ -39,29 +38,16 @@ from db.models import (
 )
 from db.repo import (
     create_meal_plan,
-    create_query_log,
     create_review,
     get_meal_plan_by_thread,
     update_meal_plan_status,
 )
 from db.session import get_engine
+from guardrails.input import evaluate_input_guardrail, load_guardrails_config
+from guardrails.output import evaluate_output_guardrail
+from observability.querylog import estimate_cost_usd, upsert_query_log
 
-DISCLAIMER_VI = (
-    "\n\n---\n*Lưu ý: Thực đơn chỉ mang tính tham khảo hỗ trợ dinh dưỡng, "
-    "không thay thế chẩn đoán hoặc chỉ định điều trị của bác sĩ.*"
-)
-
-INJECTION_PATTERNS = (
-    "bo qua huong dan",
-    "bo qua moi huong dan",
-    "ignore previous",
-    "ignore all instructions",
-    "system prompt",
-    "ban la admin",
-    "tiet lo prompt",
-    "jailbreak",
-    "developer mode",
-)
+DISCLAIMER_VI = f"\n\n---\n{str(load_guardrails_config()['disclaimer_vi']).strip()}"
 
 NEED_QUERY_MAP: dict[str, tuple[str, str | None]] = {
     "kiem_soat_duong_huyet": ("dinh dưỡng kiểm soát đường huyết tiểu đường type 2", "t2d"),
@@ -70,14 +56,6 @@ NEED_QUERY_MAP: dict[str, tuple[str, str | None]] = {
     "giam_can": ("dinh dưỡng giảm cân kiểm soát năng lượng béo phì", "obesity"),
     "duy_tri_can_bang": ("chế độ dinh dưỡng cân bằng hợp lý", None),
 }
-
-
-def _detect_injection(text: str) -> bool:
-    """Phát hiện mẫu prompt injection cơ bản trong văn bản người dùng."""
-    if not text or not text.strip():
-        return False
-    norm = unidecode(text).lower()
-    return any(pat in norm for pat in INJECTION_PATTERNS)
 
 
 def _diversify_foods(candidates: list[dict[str, Any]], limit: int = 120) -> list[dict[str, Any]]:
@@ -349,6 +327,28 @@ def _apply_edited_items(
     return updated
 
 
+def _accumulate_llm_metrics(
+    metrics_in: dict[str, Any] | None,
+    *,
+    model_name: str,
+    usage: dict[str, int],
+) -> dict[str, Any]:
+    """Cộng dồn số lần gọi LLM, token tổng và token chi tiết theo từng model."""
+    metrics = dict(metrics_in or {})
+    metrics["llm_calls"] = int(metrics.get("llm_calls", 0)) + 1
+    metrics["tokens_in"] = int(metrics.get("tokens_in", 0)) + int(usage.get("tokens_in", 0))
+    metrics["tokens_out"] = int(metrics.get("tokens_out", 0)) + int(usage.get("tokens_out", 0))
+
+    raw_mu = dict(metrics.get("model_usage") or {})
+    cur = dict(raw_mu.get(model_name) or {})
+    cur["calls"] = int(cur.get("calls", 0)) + 1
+    cur["tokens_in"] = int(cur.get("tokens_in", 0)) + int(usage.get("tokens_in", 0))
+    cur["tokens_out"] = int(cur.get("tokens_out", 0)) + int(usage.get("tokens_out", 0))
+    raw_mu[model_name] = cur
+    metrics["model_usage"] = raw_mu
+    return metrics
+
+
 # ==============================================================================
 # 11 NODE THEO SPEC MỤC 9.1
 # ==============================================================================
@@ -364,11 +364,13 @@ def intake(state: AgentState) -> dict[str, Any]:
     )
     session_id = state.get("session_id") or f"sess-{uuid4().hex[:12]}"
     thread_id = state.get("thread_id") or f"thread-{uuid4().hex[:12]}"
+    trace_id = state.get("trace_id") or ""
     metrics = dict(state.get("metrics") or {})
     metrics.setdefault("llm_calls", 0)
     metrics.setdefault("tokens_in", 0)
     metrics.setdefault("tokens_out", 0)
     metrics.setdefault("latency_ms", 0.0)
+    metrics.setdefault("model_usage", {})
     trace_notes = list(state.get("trace_notes") or [])
     trace_notes.append(f"intake: nhận hồ sơ {profile.patient_code}")
 
@@ -376,6 +378,7 @@ def intake(state: AgentState) -> dict[str, Any]:
         "profile": profile,
         "session_id": session_id,
         "thread_id": thread_id,
+        "trace_id": trace_id,
         "retry_count": int(state.get("retry_count", 0)),
         "input_flags": list(state.get("input_flags") or []),
         "output_flags": list(state.get("output_flags") or []),
@@ -390,49 +393,56 @@ def intake(state: AgentState) -> dict[str, Any]:
 
 
 def input_guardrail(state: AgentState) -> dict[str, Any]:
-    """Node 2 (input_guardrail): Kiểm tra hợp lệ, luật nguy cơ cao, chống prompt injection."""
+    """Node 2 (input_guardrail): Kiểm tra hợp lệ, nguy cơ cao, injection, đòi thuốc, lạc đề."""
     profile = state["profile"]
-    risk = assess_risk(profile)
+    session_id = str(state.get("session_id", ""))
     flags = list(state.get("input_flags") or [])
     trace_notes = list(state.get("trace_notes") or [])
 
-    if risk.high_risk:
-        for r_code in risk.reasons:
-            if r_code not in flags:
-                flags.append(r_code)
-        trace_notes.append(f"input_guardrail: chuyển hướng bác sĩ ({','.join(risk.reasons)})")
+    result = evaluate_input_guardrail(
+        profile,
+        session_id=session_id,
+        existing_flags=flags,
+        log_events=bool(session_id),
+    )
+
+    if result.action == "redirect_to_doctor":
+        reasons_txt = ",".join(result.risk.reasons) if result.risk else "RISK_TEXT"
+        trace_notes.append(f"input_guardrail: chuyển hướng bác sĩ ({reasons_txt})")
         return {
-            "risk": risk,
-            "input_flags": flags,
+            "risk": result.risk,
+            "input_flags": result.flags,
             "status": "redirect_to_doctor",
-            "explanation_md": (
-                f"**Khuyến nghị thăm khám trực tiếp:** {risk.message_vi}{DISCLAIMER_VI}"
-            ),
+            "explanation_md": result.blocked_message_vi,
             "trace_notes": trace_notes,
         }
 
-    if "injection" in flags or _detect_injection(profile.preferences_text):
-        if "injection" not in flags:
-            flags.append("injection")
-        trace_notes.append("input_guardrail: chặn yêu cầu do phát hiện prompt injection")
+    if result.action == "blocked":
+        trace_notes.append(
+            f"input_guardrail: chặn yêu cầu ({','.join(result.flags) or 'blocked'})"
+        )
         return {
-            "risk": risk,
-            "input_flags": flags,
+            "risk": result.risk,
+            "input_flags": result.flags,
             "status": "blocked",
-            "explanation_md": (
-                "**Yêu cầu bị từ chối:** Phát hiện nội dung không hợp lệ hoặc cố tình "
-                f"vượt qua quy tắc an toàn.{DISCLAIMER_VI}"
-            ),
+            "explanation_md": result.blocked_message_vi,
             "trace_notes": trace_notes,
         }
 
-    trace_notes.append("input_guardrail: hồ sơ hợp lệ")
-    return {
-        "risk": risk,
-        "input_flags": flags,
+    out: dict[str, Any] = {
+        "risk": result.risk,
+        "input_flags": result.flags,
         "status": "draft",
         "trace_notes": trace_notes,
     }
+    if result.profile is not None:
+        out["profile"] = result.profile
+    if result.events:
+        ev_names = ",".join(ev_type for ev_type, _ in result.events)
+        trace_notes.append(f"input_guardrail: lọc/cảnh báo [{ev_names}]")
+    else:
+        trace_notes.append("input_guardrail: hồ sơ hợp lệ")
+    return out
 
 
 def classify(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
@@ -547,10 +557,11 @@ def plan(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
         plan_llm = MealPlanLLM(days=[], cannot_plan=True, reason=error_notice)
         usage = {"tokens_in": 0, "tokens_out": 0}
 
-    metrics = dict(state.get("metrics") or {})
-    metrics["llm_calls"] = int(metrics.get("llm_calls", 0)) + 1
-    metrics["tokens_in"] = int(metrics.get("tokens_in", 0)) + usage["tokens_in"]
-    metrics["tokens_out"] = int(metrics.get("tokens_out", 0)) + usage["tokens_out"]
+    metrics = _accumulate_llm_metrics(
+        state.get("metrics"),
+        model_name=get_settings().GEMINI_PLANNER_MODEL,
+        usage=usage,
+    )
 
     trace_notes = list(state.get("trace_notes") or [])
     trace_notes.append(
@@ -661,10 +672,11 @@ def explain(state: AgentState) -> dict[str, Any]:
         text = f"{text}\n\n*Ghi chú: Đã dùng giải thích tóm tắt dự phòng ({exc}).*"
         trace_notes.append(f"explain: dùng tóm tắt dự phòng do lỗi LLM ({exc})")
 
-    metrics = dict(state.get("metrics") or {})
-    metrics["llm_calls"] = int(metrics.get("llm_calls", 0)) + 1
-    metrics["tokens_in"] = int(metrics.get("tokens_in", 0)) + usage["tokens_in"]
-    metrics["tokens_out"] = int(metrics.get("tokens_out", 0)) + usage["tokens_out"]
+    metrics = _accumulate_llm_metrics(
+        state.get("metrics"),
+        model_name=get_settings().GEMINI_LIGHT_MODEL,
+        usage=usage,
+    )
 
     return {
         "explanation_md": text,
@@ -673,33 +685,38 @@ def explain(state: AgentState) -> dict[str, Any]:
     }
 
 
-def output_guardrail(state: AgentState) -> dict[str, Any]:
-    """Node 9 (output_guardrail): Kiểm tra đầu ra, sàn năng lượng và gắn disclaimer bắt buộc."""
-    explanation = state.get("explanation_md", "")
-    if "tham khảo" not in explanation.lower():
-        explanation = f"{explanation}{DISCLAIMER_VI}"
-
-    output_flags = list(state.get("output_flags") or [])
-    targets = state.get("targets")
-    plan_scored = state.get("plan_scored") or []
-
-    if targets is not None:
-        for day_tot in plan_scored:
-            if float(day_tot.get("kcal", 0.0)) < targets.kcal_floor:
-                if "energy_floor" not in output_flags:
-                    output_flags.append("energy_floor")
-
-    unfixable = bool(state.get("violations")) or (
-        "energy_floor" in output_flags or "allergen" in output_flags
+def output_guardrail(state: AgentState, gateway: ToolsGateway | None = None) -> dict[str, Any]:
+    """Node 9 (output_guardrail): Lọc từ cấm, trích nguồn, disclaimer, dị ứng và sàn kcal."""
+    input_flags = state.get("input_flags") or []
+    notice_vi = (
+        "*Nhắc nhở an toàn: Hệ thống chỉ hỗ trợ xây dựng thực đơn dinh dưỡng, "
+        "không chẩn đoán bệnh hay kê/chỉnh liều thuốc.*"
+        if "medical_advice" in input_flags
+        else ""
     )
-    status = "needs_human_review" if unfixable else "pending_review"
+
+    result = evaluate_output_guardrail(
+        explanation_md=state.get("explanation_md", ""),
+        snippets=state.get("snippets") or [],
+        profile=state.get("profile"),
+        targets=state.get("targets"),
+        plan_llm=state.get("plan_llm"),
+        plan_scored=state.get("plan_scored") or [],
+        allowed_foods=state.get("allowed_foods") or [],
+        violations=state.get("violations") or [],
+        existing_output_flags=state.get("output_flags") or [],
+        notice_vi=notice_vi,
+        session_id=str(state.get("session_id", "")),
+        gateway=gateway,
+        log_events=bool(state.get("session_id")),
+    )
 
     trace_notes = list(state.get("trace_notes") or [])
-    trace_notes.append(f"output_guardrail: status={status}")
+    trace_notes.append(f"output_guardrail: status={result.status}")
     return {
-        "explanation_md": explanation,
-        "output_flags": output_flags,
-        "status": status,
+        "explanation_md": result.explanation_md,
+        "output_flags": result.output_flags,
+        "status": result.status,
         "trace_notes": trace_notes,
     }
 
@@ -801,6 +818,12 @@ def finalize(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
     metrics = state.get("metrics") or {}
     violations = state.get("violations") or []
     profile = state["profile"]
+    trace_id = str(state.get("trace_id", ""))
+    recorded_cost, _ = estimate_cost_usd(
+        tokens_in=int(metrics.get("tokens_in", 0)),
+        tokens_out=int(metrics.get("tokens_out", 0)),
+        model_usage=metrics.get("model_usage"),
+    )
 
     engine = get_engine()
     with Session(engine) as session:
@@ -816,8 +839,7 @@ def finalize(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
                 ),
             )
 
-        create_query_log(
-            session,
+        upsert_query_log(
             session_id=state.get("session_id", "sess-default"),
             patient_code=profile.patient_code,
             status=final_status,
@@ -826,9 +848,12 @@ def finalize(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
             llm_calls=int(metrics.get("llm_calls", 0)),
             tokens_in=int(metrics.get("tokens_in", 0)),
             tokens_out=int(metrics.get("tokens_out", 0)),
+            est_cost_usd=recorded_cost,
             retry_count=int(state.get("retry_count", 0)),
             violation_codes=",".join(v.code for v in violations),
-            is_synthetic_log=False,
+            trace_id=trace_id,
+            model_usage=metrics.get("model_usage"),
+            session=session,
         )
         session.commit()
 

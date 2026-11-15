@@ -7,19 +7,46 @@ Hệ thống AI hỗ trợ phân loại nhu cầu dinh dưỡng và xây dựng 
 ## Yêu cầu môi trường
 
 - Python 3.12+
-- Thiết lập biến môi trường từ `.env.example` sang `.env`
+- Cài đặt thư viện chuẩn từ `requirements.txt` (`make setup`).
+- Nếu dùng nhà cung cấp tùy chọn `LLM_PROVIDER=groq` hoặc `LLM_PROVIDER=alibaba`, cần cài thêm gói tương ứng (`groq` hoặc `openai`) trong `.venv`.
+- Sao chép `.env.example` thành `.env` và điền biến môi trường phù hợp (không commit `.env`).
+
+## Cấu hình `.env` (trạng thái đến M10)
+
+- **Chế độ LLM (`LLM_MODE`):** `mock` (tất định offline, mặc định khi test/CI) hoặc `real`.
+- **Nhà cung cấp (`LLM_PROVIDER`):**
+  - `gemini` (mặc định theo `docs/SPEC.md`): dùng `GEMINI_API_KEY`, `GEMINI_PLANNER_MODEL`, `GEMINI_LIGHT_MODEL`.
+  - `groq` (tùy chọn): dùng `GROQ_API_KEY`, `GROQ_MODEL`.
+  - `alibaba` (tùy chọn, OpenAI-compatible): dùng `ALIBABA_API_KEY`, `ALIBABA_BASE_URL`, `ALIBABA_MODEL`.
+- **Công cụ & An toàn (`TOOLS_MODE`, `SAFETY_LLM`):**
+  - `TOOLS_MODE=mcp` (mặc định production/MCP) hoặc `direct` (gọi hàm trực tiếp).
+  - `SAFETY_LLM=off` (mặc định theo luật từ điển) hoặc `on` (lớp phân loại an toàn bổ sung, chỉ siết chặt thêm).
+- **Observability (`LANGFUSE_*`):** Langfuse v5 tự kích hoạt khi có đủ `LANGFUSE_PUBLIC_KEY` và `LANGFUSE_SECRET_KEY`; để trống sẽ tự tắt an toàn.
 
 ## Các lệnh thường dùng
 
 ```bash
-make setup     # Cài đặt thư viện từ requirements.txt
-make init-db   # Khởi tạo cơ sở dữ liệu SQLite
-make seed      # Tạo 30 bệnh nhân giả lập (data/patients_seed.json)
-make ingest    # Nạp tài liệu hướng dẫn vào ChromaDB (RAG)
-make mcp-dev   # Chạy MCP server kèm MCP Inspector
-make run       # Khởi động giao diện Streamlit
-make test      # Chạy kiểm thử pytest
-make lint      # Kiểm tra code bằng ruff
+make setup        # Cài đặt thư viện từ requirements.txt
+make init-db      # Khởi tạo cơ sở dữ liệu SQLite
+make import-food  # Nạp data/food.csv vào SQLite
+make seed         # Tạo 30 bệnh nhân giả lập (data/patients_seed.json)
+make ingest       # Nạp tài liệu hướng dẫn vào ChromaDB (RAG)
+make mcp-dev      # Chạy MCP server kèm MCP Inspector
+make test         # Chạy pytest mặc định (-m "not slow")
+make eval-rag     # Đánh giá truy xuất RAG (retrieval_hit@4) trên evals/rag_questions.json
+make check-rules  # Kiểm tra cờ TODO_VERIFY trong config/*.yaml
+make lint         # Kiểm tra code bằng ruff
+```
+
+> **Ghi chú lộ trình mốc:** Đến hết M10, các lệnh `make run` (`app/main.py` — thuộc M11 Streamlit UI) và `make eval` (`evals/run_eval.py` — thuộc M12 Evals đầy đủ) là mục tiêu giữ chỗ theo `docs/SPEC.md` và chưa được triển khai.
+
+### Chạy kiểm thử offline trên Windows PowerShell
+
+```powershell
+$env:LLM_MODE = "mock"
+.venv\Scripts\ruff.exe check .
+.venv\Scripts\pytest.exe -q -m "not slow"
+.venv\Scripts\python.exe -m evals.rag_eval --k 4
 ```
 
 ## Chạy MCP server và thử bằng Inspector
@@ -46,3 +73,5 @@ make mcp-dev
 # hoặc nếu cần gắn editable package dự án:
 .venv\Scripts\mcp dev mcp_server/server.py --with-editable .
 ```
+
+> Trên Windows, `asyncio` sử dụng loopback socket nội bộ (`socketpair`) cho MCP `stdio`; nếu chạy trong môi trường hạn chế loopback socket, dùng `TOOLS_MODE=direct` để chạy luồng chính theo phương án dự phòng của `docs/SPEC.md` mục 15.2.

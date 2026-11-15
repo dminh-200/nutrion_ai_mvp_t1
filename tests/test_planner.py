@@ -471,6 +471,7 @@ def test_explain_llm_real_mode_uses_light_model_and_snippets(tmp_path: Path) -> 
 def test_plan_node_missing_api_key_no_crash_and_passes_violations(monkeypatch) -> None:
     """Node plan không crash khi thiếu GEMINI_API_KEY ở real mode và truyền vi phạm khi retry."""
     monkeypatch.setenv("LLM_MODE", "real")
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
     monkeypatch.setenv("GEMINI_API_KEY", "")
     get_settings.cache_clear()
     try:
@@ -528,3 +529,39 @@ def test_get_or_create_health_profile_versions_on_change(tmp_path: Path) -> None
         assert len(algs_hp2) == 1
         assert len(session.scalars(select(HealthProfile)).all()) == 2
         session.commit()
+
+
+def test_alibaba_prompt_has_correct_column_header_dynamic_bounds_and_curated_limit() -> None:
+    """Prompt Alibaba mô tả đúng 10 cột dinh dưỡng, có khoảng đạt động và giới hạn <= 56 món."""
+    from agent.prompts import format_allowed_foods_compact_alibaba
+
+    many_foods = [
+        {
+            "id": i,
+            "name_vi": f"Món thử nghiệm {i}",
+            "food_group": ["ngu_coc", "thit_gia_cam", "rau_cu", "trai_cay", "dau_mo_hat"][i % 5],
+            "kcal": 120.0 + i,
+            "protein_g": 5.0,
+            "fat_g": 2.0,
+            "carb_g": 20.0,
+            "sugar_g": 1.0,
+            "sodium_mg": 30.0,
+            "purine_level": "low",
+        }
+        for i in range(1, 91)
+    ]
+    compact = format_allowed_foods_compact_alibaba(many_foods)
+    assert len(compact.splitlines()) <= 56
+
+    prompt = build_planner_prompt(
+        profile=_profile(),
+        targets=_targets(),
+        needs=_needs(),
+        allowed_foods=many_foods,
+        violations=[Violation(code="MACRO_OUT_OF_RANGE", message_vi="Đạm thừa", day=1)],
+        provider="alibaba",
+    )
+    assert "(trên 100g: id|tên|nhóm|kcal|đạm_g|béo_g|carb_g|đường_g|natri_mg|purin)" in prompt
+    assert "NGƯỠNG ĐẠT MỖI NGÀY" in prompt
+    assert "SỬA VI PHẠM LẦN TRƯỚC" in prompt
+    assert "display_name" not in prompt

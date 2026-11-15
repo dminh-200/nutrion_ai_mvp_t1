@@ -18,10 +18,19 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_PLANNER_MODEL: str = "gemini-3.8-flash"
     GEMINI_LIGHT_MODEL: str = "gemini-3.5-flash-lite"
+    LLM_PROVIDER: str = "gemini"
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "qwen/qwen3.8-27b"
+    ALIBABA_API_KEY: str = ""
+    ALIBABA_BASE_URL: str = (
+        "https://ws-rkodq3wgmou33rdz.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+    )
+    ALIBABA_MODEL: str = "qwen3.8-flash"
     LLM_MODE: Literal["real", "mock"] = "mock"
     LLM_MAX_RPM: int = 8
     LLM_CACHE_DIR: str = ".cache/llm"
     TOOLS_MODE: Literal["mcp", "direct"] = "direct"
+    SAFETY_LLM: Literal["on", "off"] = "off"
 
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""
@@ -41,12 +50,26 @@ class Settings(BaseSettings):
 
     def validate_llm_config(self) -> tuple[bool, str | None]:
         """Kiểm tra cấu hình LLM; trả về (hợp_lệ, thông_báo_lỗi_nếu_có)."""
-        if self.LLM_MODE == "real" and not self.GEMINI_API_KEY.strip():
-            return (
-                False,
-                "Thiếu GEMINI_API_KEY khi LLM_MODE=real. "
-                "Vui lòng bổ sung GEMINI_API_KEY trong .env hoặc chuyển sang LLM_MODE=mock.",
-            )
+        if self.LLM_MODE == "real":
+            provider = self.LLM_PROVIDER.lower().strip()
+            if provider == "groq" and not self.GROQ_API_KEY.strip():
+                return (
+                    False,
+                    "Thiếu GROQ_API_KEY khi LLM_MODE=real và LLM_PROVIDER=groq. "
+                    "Vui lòng bổ sung GROQ_API_KEY trong .env hoặc chuyển sang LLM_MODE=mock.",
+                )
+            if provider == "alibaba" and not self.ALIBABA_API_KEY.strip():
+                return (
+                    False,
+                    "Thiếu ALIBABA_API_KEY khi LLM_MODE=real và LLM_PROVIDER=alibaba. "
+                    "Vui lòng bổ sung ALIBABA_API_KEY trong .env hoặc chuyển sang LLM_MODE=mock.",
+                )
+            if provider == "gemini" and not self.GEMINI_API_KEY.strip():
+                return (
+                    False,
+                    "Thiếu GEMINI_API_KEY khi LLM_MODE=real. "
+                    "Vui lòng bổ sung GEMINI_API_KEY trong .env hoặc chuyển sang LLM_MODE=mock.",
+                )
         return True, None
 
 
