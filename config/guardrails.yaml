@@ -67,7 +67,9 @@ injection:
     - '(?i)(bo|quen|xoa|huy)\s+q?u?a?\s*(moi|het|tat\s*ca)?\s*(huong|chi|quy)\s*(dan|tac)'
     - '(?i)(tiet|lo|in|xem|hien\s*thi|doc)\s*(ra\s*)?(system\s*|he\s*thong\s*)?prompt'
     - '(?i)(dong\s*vai|tro\s*thanh|bat\s*che\s*do)\s*(admin|hacker|root|khong\s*gioi\s*han|developer)'
-    - '(?i)<\s*/?\s*(system|instruction|admin|prompt)\s*>'
+    - '(?i)<\s*/?\s*(system|instruction|admin|prompt|user_data|userdata|developer|assistant|context|tool)\s*>'
+    - '(?i)(bo\s+qua|bat\s+chap|khong\s+can\s+(?:de\s+y|quan\s+tam|tranh))\s+(?:van\s+de\s+)?di\s+ung'
+    - '(?i)(?:hay|cu|van|bat\s+buoc|yeu\s+cau)\s+(?:chon|them|dua|cho|xep)\s+[^.\n]{0,40}\b(?:mon\s+chua\s+(?:lac|dau\s+phong|hai\s+san|tom|cua|sua|trung|gluten|dau\s+nanh)|di\s+nguyen|thuc\s+pham\s+gay\s+di\s+ung)\b'
 
 medical_advice:
   keywords:
@@ -206,17 +208,42 @@ forbidden_output:
   keywords:
     - "chua khoi"
     - "chua dut diem"
+    - "tri dut diem"
+    - "dut diem benh"
     - "khoi han"
     - "cam ket khoi"
     - "dam bao khoi benh"
     - "thay the thuoc"
+    - "bo thuoc"
+    - "ngung thuoc"
     - "ngung uong thuoc"
+    - "ngung dung thuoc"
+    - "dung uong thuoc"
+    - "dung dung thuoc"
+    - "ngung insulin"
     - "ngung tiem insulin"
+    - "ngung dung insulin"
+    - "dung tiem insulin"
+    - "dung dung insulin"
+    - "bo insulin"
+    - "ngung tiem"
+    - "bo uong thuoc"
+    - "tu y ngung"
+    - "thuoc chong viem"
+    - "thuoc ha duong huyet"
     - "tu bo phac do"
+    - "ngung phac do"
   regex_patterns:
-    - '(?i)\b(metformin|insulin|glibenclamide|glimepiride|losartan|amlodipine|allopurinol|febuxostat|colchicine|atorvastatin|statin)\b[^.\n]*\b\d+\s*(mg|mcg|iu|ui|ml|vien)\b'
-    - '(?i)\b\d+\s*(mg|mcg|iu|ui|ml)\s*(metformin|insulin|losartan|amlodipine|allopurinol|colchicine|thuoc)\b'
-    - '(?i)\b(uong|tiem|dung|tang|giam|chia)\s+(lieu\s+)?\d+\s*(mg|mcg|iu|ui|ml|vien)\b'
-    - '(?i)\b(toi|he\s*thong)\s+chan\s+doan\s+(ban|quy\s*vi)\b'
-    - '(?i)\bchan\s+doan\s+(xac\s*dinh|mac\s+benh|chinh\s*xac)\b'
-    - '(?i)\b(cam\s*ket|dam\s*bao|chac\s*chan)\s+(chua\s+)?(khoi|het\s+benh)\b'
+    - '\b(ngung|dung|bo|cat|thay(?:\s+the)?|tu\s+bo|tam\s+(?:dung|ngung)|giam|tang|chinh|dieu\s+chinh|doi|ke\s+don|nhay\s+qua|khong\s+can)\s+(?:viec\s+)?(?:su\s+)?(?:dung|uong|tiem|chich)?\s*(?:lai\s+)?(thuoc|mui\s+(?:tiem|chich|dieu\s+tri|thuoc|ke\s+tiep|tiep\s+theo)|cu\s+(?:tiem|chich)|lieu\s+(?:tiem|dieu\s+tri|thuoc|ke\s+tiep|tiep\s+theo)|insulin|metformin|glibenclamide|glimepiride|gliclazide|sitagliptin|empagliflozin|dapagliflozin|losartan|amlodipine|valsartan|enalapril|lisinopril|nifedipine|allopurinol|febuxostat|colchicin\w*|atorvastatin|rosuvastatin|statin|aspirin|warfarin|phac\s+do)\b'
+    - '\b(thuoc(?:\s+(?:tiem|uong|chich|dieu\s+tri|ha\s+\w+))?|mui\s+(?:tiem|chich|dieu\s+tri)|cu\s+(?:tiem|chich)|lieu\s+(?:tiem|thuoc|dieu\s+tri)|phac\s+do(?:\s+dieu\s+tri)?|insulin|metformin|glibenclamide|glimepiride|gliclazide|sitagliptin|empagliflozin|dapagliflozin|losartan|amlodipine|valsartan|enalapril|lisinopril|nifedipine|allopurinol|febuxostat|colchicin\w*|atorvastatin|rosuvastatin|statin|aspirin|warfarin)\b[^.\n;]{0,45}\b(ngung|dung|bo|cat|thay(?:\s+the)?|doi|khong\s+can|tam\s+(?:dung|ngung)|tang\s+lieu|giam\s+lieu|chinh\s+lieu|dieu\s+chinh)\b'
+    - '\b(?:thay(?:\s+the)?|doi)\b[^.\n;]{0,45}\b(?:thuoc|mui\s+(?:tiem|chich|dieu\s+tri)|cu\s+tiem|lieu\s+tiem|phac\s+do|insulin|metformin)\b[^.\n;]{0,45}\bbang\b'
+    - '\b(?:dung|uong|su\s+dung)\b[^.\n;]{0,45}\bthay\s+(?:cho\s+)?(?:thuoc|mui\s+(?:tiem|chich|dieu\s+tri)|cu\s+tiem|phac\s+do|insulin|metformin)\b'
+    - '\b(metformin|insulin|glibenclamide|glimepiride|gliclazide|sitagliptin|empagliflozin|dapagliflozin|losartan|amlodipine|valsartan|enalapril|lisinopril|nifedipine|allopurinol|febuxostat|colchicin\w*|atorvastatin|rosuvastatin|statin|aspirin|warfarin)\b[^.\n]*\b\d+\s*(mg|mcg|iu|ui|ml|vien|don\s+vi)\b'
+    - '\b\d+\s*(mg|mcg|iu|ui|ml|don\s+vi)\s*(metformin|insulin|losartan|amlodipine|allopurinol|colchicin\w*|thuoc)\b'
+    - '\b(nen|hay|phai|ban\s+nen|nguoi\s+benh\s+nen)\b[^.\n]{0,30}\b(uong|tiem|chich|dung)\b[^.\n]{0,35}\b(thuoc|metformin|insulin|allopurinol|amlodipine|losartan|colchicin\w*|lieu\s+thuoc|lieu\s+dung|\d+\s*vien)\b'
+    - '\b(uong|tiem|dung|tang|giam|chia)\s+(lieu\s+)?\d+\s*(mg|mcg|iu|ui|ml|vien|don\s+vi)\b'
+    - '\b(toi|he\s*thong|chung\s*toi)\s+(?:xin\s+)?chan\s+doan\s+(ban|quy\s*vi|benh\s*nhan)\b'
+    - '\bchan\s+doan\s+(xac\s*dinh|mac\s+benh|chinh\s*xac)\b'
+    - '\b(ket\s+luan|khang\s+dinh)\s+(?:ban|quy\s*vi)\s+(?:bi|mac)\s+benh\b'
+    - '\b(cam\s*ket|dam\s*bao|chac\s*chan|giup|se)\s+(?:chua\s+|tri\s+)?(khoi|dut\s*diem|het\s+benh)\b'
+    - '\b(khong\s+con\s+mac\s+benh|het\s+han\s+benh|loai\s+bo\s+hoan\s+toan\s+benh)\b'

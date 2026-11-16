@@ -1,16 +1,20 @@
 """Các node xử lý trong LangGraph (đủ 11 node theo SPEC mục 9.1–9.2 và 3.2)."""
 
 import json
-from typing import Any
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
-import httpx
-from google.genai import errors as genai_errors
 from langgraph.types import interrupt
+from pydantic import BaseModel, BeforeValidator, ConfigDict, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from agent.llm import LLMConfigError, call_explain_llm, call_planner_llm
+from agent.llm import (
+    call_explain_llm,
+    call_planner_llm,
+    get_llm_error_types,
+    resolve_active_model_name,
+)
 from agent.state import AgentState
 from agent.tools_gateway import ToolsGateway
 from agent.verifier import verify_meal_plan
@@ -46,6 +50,7 @@ from db.session import get_engine
 from guardrails.input import evaluate_input_guardrail, load_guardrails_config
 from guardrails.output import evaluate_output_guardrail
 from observability.querylog import estimate_cost_usd, upsert_query_log
+from rag.retrieve import sanitize_guideline_snippets
 
 DISCLAIMER_VI = f"\n\n---\n{str(load_guardrails_config()['disclaimer_vi']).strip()}"
 
@@ -239,9 +244,48 @@ def _persist_meal_plan(
 
     engine = get_engine()
     with Session(engine) as session:
-        hp = _get_or_create_health_profile(session, profile)
         existing: MealPlan | None = get_meal_plan_by_thread(session, thread_id)
-        if existing is None:
+        if existing is not None:
+            existing_hp = session.get(HealthProfile, existing.profile_id)
+            existing_patient = (
+                session.get(Patient, existing_hp.patient_id)
+                if existing_hp is not None
+                else None
+            )
+            if (
+                existing_hp is None
+                or existing_patient is None
+                or existing_patient.code != profile.patient_code
+            ):
+                raise ValueError(
+                    f"thread_id={thread_id!r} đã thuộc về hồ sơ khác "
+                    f"(meal_plan_id={existing.id}), từ chối ghi đè."
+                )
+            if existing.status != "pending_review":
+                raise ValueError(
+                    f"thread_id={thread_id!r} (meal_plan_id={existing.id}) đã ở trạng thái "
+                    f"{existing.status!r}, không thể ghi đè."
+                )
+            hp = _get_or_create_health_profile(session, profile)
+            if existing.profile_id != hp.id:
+                raise ValueError(
+                    f"thread_id={thread_id!r} (meal_plan_id={existing.id}) không khớp hồ sơ "
+                    "đã lưu trước đó, từ chối ghi đè."
+                )
+            plan_row = update_meal_plan_status(
+                session,
+                existing.id,
+                status=status,
+                explanation_md=explanation_md,
+                retry_count=retry_count,
+                verifier_passed_first_try=passed_first_try,
+            )
+            assert plan_row is not None
+            plan_llm = state.get("plan_llm")
+            if save_items and plan_llm is not None and not plan_llm.cannot_plan and plan_llm.days:
+                _save_plan_items(session, plan_row.id, plan_llm, gateway)
+        else:
+            hp = _get_or_create_health_profile(session, profile)
             plan_row = create_meal_plan(
                 session,
                 profile_id=hp.id,
@@ -253,19 +297,6 @@ def _persist_meal_plan(
                 retry_count=retry_count,
                 verifier_passed_first_try=passed_first_try,
             )
-            plan_llm = state.get("plan_llm")
-            if save_items and plan_llm is not None and not plan_llm.cannot_plan and plan_llm.days:
-                _save_plan_items(session, plan_row.id, plan_llm, gateway)
-        else:
-            plan_row = update_meal_plan_status(
-                session,
-                existing.id,
-                status=status,
-                explanation_md=explanation_md,
-                retry_count=retry_count,
-                verifier_passed_first_try=passed_first_try,
-            )
-            assert plan_row is not None
             plan_llm = state.get("plan_llm")
             if save_items and plan_llm is not None and not plan_llm.cannot_plan and plan_llm.days:
                 _save_plan_items(session, plan_row.id, plan_llm, gateway)
@@ -429,6 +460,18 @@ def input_guardrail(state: AgentState) -> dict[str, Any]:
             "trace_notes": trace_notes,
         }
 
+    if result.action == "needs_human_review":
+        trace_notes.append(
+            f"input_guardrail: chuyển chuyên gia xem xét ({','.join(result.flags) or 'ambiguous'})"
+        )
+        return {
+            "risk": result.risk,
+            "input_flags": result.flags,
+            "status": "needs_human_review",
+            "explanation_md": result.blocked_message_vi,
+            "trace_notes": trace_notes,
+        }
+
     out: dict[str, Any] = {
         "risk": result.risk,
         "input_flags": result.flags,
@@ -489,10 +532,14 @@ def retrieve(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
         if len(merged) >= 8:
             break
 
+    sanitized = sanitize_guideline_snippets(merged)[:8]
     trace_notes = list(state.get("trace_notes") or [])
-    trace_notes.append(f"retrieve: truy xuất {len(merged)} đoạn hướng dẫn")
+    if sanitized:
+        trace_notes.append(f"retrieve: truy xuất {len(sanitized)} đoạn hướng dẫn")
+    else:
+        trace_notes.append("retrieve: không tìm thấy đoạn tài liệu dinh dưỡng phù hợp")
     return {
-        "snippets": merged[:8],
+        "snippets": sanitized,
         "trace_notes": trace_notes,
     }
 
@@ -546,20 +593,14 @@ def plan(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
             violations=prev_violations,
             force_violation=force_violation,
         )
-    except (
-        LLMConfigError,
-        genai_errors.APIError,
-        TimeoutError,
-        ConnectionError,
-        httpx.HTTPError,
-    ) as exc:
+    except get_llm_error_types() as exc:
         error_notice = str(exc)
         plan_llm = MealPlanLLM(days=[], cannot_plan=True, reason=error_notice)
         usage = {"tokens_in": 0, "tokens_out": 0}
 
     metrics = _accumulate_llm_metrics(
         state.get("metrics"),
-        model_name=get_settings().GEMINI_PLANNER_MODEL,
+        model_name=resolve_active_model_name("planner", settings=get_settings()),
         usage=usage,
     )
 
@@ -636,7 +677,8 @@ def explain(state: AgentState) -> dict[str, Any]:
     """Node 8 (explain): Viết giải thích cho người bệnh có trích nguồn (model nhẹ ở chế độ real)."""
     targets = state.get("targets")
     needs = state.get("needs")
-    snippets = state.get("snippets") or []
+    raw_snippets = state.get("snippets") or []
+    snippets = sanitize_guideline_snippets(raw_snippets)
     assert targets is not None and needs is not None
 
     food_name_map = {
@@ -646,6 +688,11 @@ def explain(state: AgentState) -> dict[str, Any]:
     }
 
     trace_notes = list(state.get("trace_notes") or [])
+    if len(snippets) < len(raw_snippets):
+        trace_notes.append("explain: đã lọc nội dung thuốc/thư mục khỏi đoạn RAG")
+    if not snippets:
+        trace_notes.append("explain: không đủ tài liệu dinh dưỡng phù hợp để trích dẫn trực tiếp")
+
     try:
         text, usage = call_explain_llm(
             needs=needs,
@@ -656,13 +703,7 @@ def explain(state: AgentState) -> dict[str, Any]:
             food_name_map=food_name_map,
         )
         trace_notes.append("explain: đã tạo giải thích thực đơn")
-    except (
-        LLMConfigError,
-        genai_errors.APIError,
-        TimeoutError,
-        ConnectionError,
-        httpx.HTTPError,
-    ) as exc:
+    except get_llm_error_types() as exc:
         text, usage = call_explain_llm(
             needs=needs,
             targets=targets,
@@ -672,9 +713,15 @@ def explain(state: AgentState) -> dict[str, Any]:
         text = f"{text}\n\n*Ghi chú: Đã dùng giải thích tóm tắt dự phòng ({exc}).*"
         trace_notes.append(f"explain: dùng tóm tắt dự phòng do lỗi LLM ({exc})")
 
+    if not snippets and "không đủ tài liệu" not in text.lower():
+        text = (
+            f"{text}\n\n*Lưu ý tài liệu: Không đủ tài liệu hướng dẫn dinh dưỡng phù hợp "
+            "để trích dẫn trực tiếp.*"
+        ).strip()
+
     metrics = _accumulate_llm_metrics(
         state.get("metrics"),
-        model_name=get_settings().GEMINI_LIGHT_MODEL,
+        model_name=resolve_active_model_name("light", settings=get_settings()),
         usage=usage,
     )
 
@@ -721,6 +768,61 @@ def output_guardrail(state: AgentState, gateway: ToolsGateway | None = None) -> 
     }
 
 
+VALID_REVIEW_DECISIONS: tuple[str, ...] = ("approve", "edit", "reject")
+
+
+def validate_review_decision(raw_decision: Any) -> Literal["approve", "edit", "reject"]:
+    """Xác thực quyết định duyệt của chuyên gia; chỉ chấp nhận approve, edit hoặc reject."""
+    if not isinstance(raw_decision, str):
+        raise ValueError(
+            "Thiếu hoặc sai kiểu quyết định duyệt. Chỉ chấp nhận: approve, edit, reject."
+        )
+    cleaned = raw_decision.strip()
+    if cleaned not in VALID_REVIEW_DECISIONS:
+        raise ValueError(
+            f"Quyết định duyệt không hợp lệ: {raw_decision!r}. "
+            "Chỉ chấp nhận: approve, edit, reject."
+        )
+    return cleaned  # type: ignore[return-value]
+
+
+def _coerce_review_resume_payload(value: Any) -> Any:
+    """Chuẩn hóa dữ liệu resume thành dict có khóa decision trước khi Pydantic xác thực."""
+    if isinstance(value, str):
+        return {"decision": value}
+    if isinstance(value, dict) and "decision" not in value:
+        return {**value, "decision": None}
+    return value
+
+
+class ReviewResumePayload(BaseModel):
+    """Schema xác thực phản hồi HITL ngay tại interrupt() để không lưu giá trị sai."""
+
+    model_config = ConfigDict(extra="allow")
+
+    decision: Literal["approve", "edit", "reject"]
+    note: str = ""
+    edited_items: list[dict[str, Any]] | None = None
+
+    @field_validator("decision", mode="before")
+    @classmethod
+    def _validate_decision(cls, value: Any) -> str:
+        return validate_review_decision(value)
+
+    @field_validator("edited_items", mode="before")
+    @classmethod
+    def _validate_edited_items(cls, value: Any) -> Any:
+        if value is not None and not isinstance(value, list):
+            raise ValueError("Trường edited_items phải là danh sách khi decision='edit'.")
+        return value
+
+
+ReviewResumeInput = Annotated[
+    ReviewResumePayload,
+    BeforeValidator(_coerce_review_resume_payload),
+]
+
+
 def await_review(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
     """Node 10 (await_review): Lưu meal_plan status=pending_review rồi gọi interrupt() chờ duyệt."""
     meal_plan_id = _persist_meal_plan(
@@ -739,13 +841,20 @@ def await_review(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
         "explanation_md": state.get("explanation_md", ""),
     }
 
-    decision_data = interrupt(payload)
-    review_dict: dict[str, Any] = (
-        dict(decision_data)
-        if isinstance(decision_data, dict)
-        else {"decision": str(decision_data)}
-    )
-    decision = str(review_dict.get("decision", "approve"))
+    decision_data = interrupt(payload, response_schema=ReviewResumeInput)
+    if isinstance(decision_data, ReviewResumePayload):
+        review_dict = decision_data.model_dump()
+    elif isinstance(decision_data, dict):
+        review_dict = dict(decision_data)
+    elif isinstance(decision_data, str):
+        review_dict = {"decision": decision_data}
+    else:
+        raise ValueError(
+            "Dữ liệu phản hồi duyệt phải là dict hoặc chuỗi hợp lệ (approve, edit, reject)."
+        )
+
+    decision = validate_review_decision(review_dict.get("decision"))
+    review_dict["decision"] = decision
     trace_notes = list(state.get("trace_notes") or [])
 
     plan_llm = state.get("plan_llm")
@@ -758,7 +867,10 @@ def await_review(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
         new_status = "rejected"
         trace_notes.append("await_review: chuyên gia từ chối thực đơn")
     elif decision == "edit":
-        edited_items = list(review_dict.get("edited_items") or [])
+        raw_edited = review_dict.get("edited_items")
+        if raw_edited is not None and not isinstance(raw_edited, list):
+            raise ValueError("Trường edited_items phải là danh sách khi decision='edit'.")
+        edited_items = list(raw_edited or [])
         if plan_llm is not None and targets is not None:
             plan_llm = _apply_edited_items(plan_llm, edited_items)
             updated_violations, updated_scored = verify_meal_plan(
@@ -776,10 +888,15 @@ def await_review(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
                 new_status = "approved"
                 trace_notes.append("await_review: chuyên gia sửa và đạt verifier -> approved")
         else:
-            new_status = "approved"
-    else:
+            new_status = "needs_human_review"
+            trace_notes.append(
+                "await_review: thiếu thực đơn/mục tiêu để kiểm chứng bản sửa -> needs_human_review"
+            )
+    elif decision == "approve":
         new_status = "approved"
         trace_notes.append("await_review: chuyên gia duyệt -> approved")
+    else:  # pragma: no cover - phòng thủ bổ sung
+        raise ValueError(f"Quyết định duyệt không hợp lệ: {decision!r}.")
 
     return {
         "review": review_dict,
@@ -794,7 +911,7 @@ def await_review(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
 
 def finalize(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
     """Node 11 (finalize): Ghi trạng thái cuối, MealPlan/MealPlanItem, Review và QueryLog."""
-    final_status = state.get("status", "approved")
+    final_status = state.get("status") or "needs_human_review"
     explanation_md = state.get("explanation_md", "")
     if final_status == "needs_human_review" and not explanation_md:
         explanation_md = (
@@ -832,7 +949,7 @@ def finalize(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
                 session,
                 meal_plan_id=meal_plan_id,
                 reviewer_name=str(review.get("reviewer_name", "Chuyên gia dinh dưỡng")),
-                decision=str(review.get("decision", "approve")),
+                decision=str(review.get("decision", "")),
                 note=str(review.get("note", "")),
                 edited_items_json=json.dumps(
                     review.get("edited_items") or [], ensure_ascii=False

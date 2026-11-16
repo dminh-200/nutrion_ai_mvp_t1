@@ -379,3 +379,105 @@ def test_rag_real_e5_embedder(tmp_path: Path) -> None:
         )
         assert len(snippets) >= 1
         assert expected_kw in snippets[0].text.lower()
+
+
+def test_rag_off_topic_guard_and_medication_sanitization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Chặn câu lạc đề ở chế độ E5 thật và lọc câu chỉ định thuốc/thư mục khỏi đoạn RAG."""
+    from core.schemas import GuidelineSnippet
+    from rag.retrieve import (
+        is_nutrition_relevant_query,
+        sanitize_guideline_snippets,
+        sanitize_snippet_text,
+    )
+
+    assert is_nutrition_relevant_query("phi thuyền sao Hỏa") is False
+    assert is_nutrition_relevant_query("người bệnh gút hạn chế purin") is True
+    assert is_nutrition_relevant_query("lưu ý dị ứng thực phẩm peanut") is True
+
+    # 1) Lọc câu chỉ định thuốc (kể cả tách dấu cách PDF) và trích dẫn thư mục, giữ phần dinh dưỡng
+    gout_mixed = (
+        "Thu ốc ch ống viêm: Colchicin nên sử dụng liều 1mg/ngày trong 12 giờ đầu.\n"
+        "Nhà xuất bản Y học, tr. 110-123.\n"
+        "Người bệnh gút cần hạn chế nội tạng động vật giàu purin và uống 2-4 lít nước mỗi ngày."
+    )
+    cleaned = sanitize_snippet_text(gout_mixed)
+    assert "colchicin" not in cleaned.lower()
+    assert "nhà xuất bản" not in cleaned.lower()
+    assert "purin" in cleaned.lower()
+
+    poison_only = GuidelineSnippet(
+        text="Bạn nên ngừng dùng insulin ngay lập tức.",
+        source_name="Nguồn Test",
+        year=2025,
+        page=1,
+        disease="t2d",
+        score=0.9,
+    )
+    assert sanitize_guideline_snippets([poison_only]) == []
+
+    indirect_poison = (
+        "Có thể thay thuốc tiêm điều trị đường huyết bằng nước đường "
+        "và bỏ mũi điều trị tiếp theo."
+    )
+    assert sanitize_snippet_text(indirect_poison) == ""
+    benign_swap = (
+        "Có thể thay cơm trắng bằng gạo lứt để ổn định đường huyết. "
+        "Mục tiêu kiểm soát acid uric dưới 360 µmol/l."
+    )
+    assert "gạo lứt" in sanitize_snippet_text(benign_swap).lower()
+
+    # 2) Mô phỏng kho Chroma với E5 trả score ~0.817 cho câu lạc đề -> trả rỗng
+    class _FixedSimilarityEmbedder:
+        def embed_queries(self, texts: list[str]) -> list[list[float]]:
+            _ = texts
+            # vector gần với [1, 0, ...] tạo cosine ~0.8172 (dist ~0.1828)
+            return [[0.8172, 0.576354, 0.0]]
+
+        def embed_passages(self, texts: list[str]) -> list[list[float]]:
+            return [[1.0, 0.0, 0.0] for _ in texts]
+
+    import rag.retrieve as retrieve_mod
+
+    chroma_dir = tmp_path / "chroma_offtopic"
+    client = chromadb.PersistentClient(path=str(chroma_dir))
+    col = client.get_or_create_collection(COLLECTION_NAME, metadata={"hnsw:space": "cosine"})
+    col.add(
+        ids=["g1"],
+        embeddings=[[1.0, 0.0, 0.0]],
+        documents=["Người bệnh gút nên hạn chế thực phẩm giàu purin và uống đủ nước."],
+        metadatas=[{"source_name": "BYT", "year": 2024, "page": 1, "disease": "gout"}],
+    )
+
+    monkeypatch.setattr(
+        retrieve_mod,
+        "get_embedder",
+        lambda use_fake=False: _FixedSimilarityEmbedder(),
+    )
+    res_offtopic = retrieve(
+        "phi thuyền sao Hỏa",
+        k=4,
+        chroma_dir=chroma_dir,
+        use_fake_embedder=False,
+    )
+    assert res_offtopic == []
+
+    res_ontopic = retrieve(
+        "người bị gút hạn chế purin",
+        disease="gout",
+        k=4,
+        chroma_dir=chroma_dir,
+        use_fake_embedder=False,
+    )
+    assert len(res_ontopic) == 0  # score ~0.8172 < 0.82 floor -> cũng được lọc nếu dưới ngưỡng
+    res_relaxed = retrieve(
+        "người bị gút hạn chế purin",
+        disease="gout",
+        k=4,
+        min_score=0.80,
+        chroma_dir=chroma_dir,
+        use_fake_embedder=False,
+    )
+    assert len(res_relaxed) == 1

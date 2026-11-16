@@ -532,7 +532,7 @@ def test_get_or_create_health_profile_versions_on_change(tmp_path: Path) -> None
 
 
 def test_alibaba_prompt_has_correct_column_header_dynamic_bounds_and_curated_limit() -> None:
-    """Prompt Alibaba mô tả đúng 10 cột dinh dưỡng, có khoảng đạt động và giới hạn <= 56 món."""
+    """Prompt Alibaba có đúng 11 cột (gồm xơ_g), khoảng đạt động và tối đa 56 món."""
     from agent.prompts import format_allowed_foods_compact_alibaba
 
     many_foods = [
@@ -544,6 +544,7 @@ def test_alibaba_prompt_has_correct_column_header_dynamic_bounds_and_curated_lim
             "protein_g": 5.0,
             "fat_g": 2.0,
             "carb_g": 20.0,
+            "fiber_g": 3.0,
             "sugar_g": 1.0,
             "sodium_mg": 30.0,
             "purine_level": "low",
@@ -552,6 +553,7 @@ def test_alibaba_prompt_has_correct_column_header_dynamic_bounds_and_curated_lim
     ]
     compact = format_allowed_foods_compact_alibaba(many_foods)
     assert len(compact.splitlines()) <= 56
+    assert len(compact.splitlines()[0].split("|")) == 11
 
     prompt = build_planner_prompt(
         profile=_profile(),
@@ -561,7 +563,8 @@ def test_alibaba_prompt_has_correct_column_header_dynamic_bounds_and_curated_lim
         violations=[Violation(code="MACRO_OUT_OF_RANGE", message_vi="Đạm thừa", day=1)],
         provider="alibaba",
     )
-    assert "(trên 100g: id|tên|nhóm|kcal|đạm_g|béo_g|carb_g|đường_g|natri_mg|purin)" in prompt
+    assert "(trên 100g: id|tên|nhóm|kcal|đạm_g|béo_g|carb_g|xơ_g|đường_g|natri_mg|purin)" in prompt
+    assert "Chất xơ >=" in prompt
     assert "NGƯỠNG ĐẠT MỖI NGÀY" in prompt
     assert "SỬA VI PHẠM LẦN TRƯỚC" in prompt
     assert "display_name" not in prompt

@@ -9,7 +9,7 @@ import time
 from collections import deque
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 import tenacity
@@ -67,6 +67,36 @@ MAX_JSON_RETRIES = 2
 
 class LLMConfigError(RuntimeError):
     """Lỗi cấu hình khi chạy LLM_MODE=real nhưng thiếu GEMINI_API_KEY hoặc GROQ_API_KEY."""
+
+
+def resolve_active_model_name(
+    role: Literal["planner", "light"] = "planner",
+    settings: Settings | None = None,
+) -> str:
+    """Trả về tên model thực sự được dùng theo LLM_PROVIDER hiện hành."""
+    cfg = settings or get_settings()
+    provider = cfg.LLM_PROVIDER.lower().strip()
+    if provider == "groq":
+        return cfg.GROQ_MODEL
+    if provider == "alibaba":
+        return cfg.ALIBABA_MODEL
+    return cfg.GEMINI_PLANNER_MODEL if role == "planner" else cfg.GEMINI_LIGHT_MODEL
+
+
+def get_llm_error_types() -> tuple[type[BaseException], ...]:
+    """Tổng hợp các lớp ngoại lệ kết nối/API của Gemini, Groq và OpenAI SDK."""
+    err_types: list[type[BaseException]] = [
+        LLMConfigError,
+        genai_errors.APIError,
+        TimeoutError,
+        ConnectionError,
+        httpx.HTTPError,
+    ]
+    if groq is not None:
+        err_types.append(groq.APIError)
+    if openai is not None:
+        err_types.append(openai.APIError)
+    return tuple(err_types)
 
 
 class _RateLimiter:
@@ -488,6 +518,22 @@ def _select_balanced_mock_foods(
             int(f["id"]),
         ),
     )
+    fiber_carb_pool = [
+        f
+        for f in pool
+        if float(f.get("carb_g") or 0.0) >= 12.0
+        and float(f.get("sugar_g") or 0.0) <= 5.0
+        and float(f.get("fiber_g") or 0.0) >= 1.5
+    ] or carb_cands
+    fiber_carb_cands = sorted(
+        fiber_carb_pool,
+        key=lambda f: (
+            -float(f.get("fiber_g") or 0.0),
+            -_ratio(f, "carb_g", 4.0),
+            _safe_penalty(f),
+            int(f["id"]),
+        ),
+    )
     prot_cands = sorted(
         pool,
         key=lambda f: (-_ratio(f, "protein_g", 4.0), _safe_penalty(f), int(f["id"])),
@@ -495,7 +541,15 @@ def _select_balanced_mock_foods(
     fat_cands = sorted(
         pool,
         key=lambda f: (
-            -(_ratio(f, "fat_g", 9.0) + 0.2 * _ratio(f, "protein_g", 4.0)),
+            -(
+                _ratio(f, "fat_g", 9.0)
+                + 0.2 * _ratio(f, "protein_g", 4.0)
+                + (
+                    0.06 * min(float(f.get("fiber_g") or 0.0), 15.0)
+                    if targets.fiber_min_g > 0 and _ratio(f, "fat_g", 9.0) >= 0.35
+                    else 0.0
+                )
+            ),
             _safe_penalty(f),
             int(f["id"]),
         ),
@@ -504,7 +558,12 @@ def _select_balanced_mock_foods(
         [f for f in pool if f.get("food_group") == "rau_cu"]
         or [f for f in pool if f.get("food_group") in ("rau_cu", "trai_cay")]
         or pool,
-        key=lambda f: (_safe_penalty(f), float(f.get("kcal") or 0.0), int(f["id"])),
+        key=lambda f: (
+            -float(f.get("fiber_g") or 0.0),
+            _safe_penalty(f),
+            float(f.get("kcal") or 0.0),
+            int(f["id"]),
+        ),
     )
 
     picked: list[dict[str, Any]] = []
@@ -522,10 +581,10 @@ def _select_balanced_mock_foods(
                 seen_ids.add(fid)
                 return
 
-    # Bố trí cố định vị trí: 0,2 = tinh bột; 1,4 = đạm; 3 = chất béo; 5 = rau
+    # Bố trí slot: 0=tinh bột, 2=tinh bột giàu xơ, 1,4=đạm, 3=béo/hạt, 5=rau
     _pick_from(carb_cands, day_offset)
     _pick_from(prot_cands, day_offset)
-    _pick_from(carb_cands, day_offset + 1)
+    _pick_from(fiber_carb_cands, day_offset)
     _pick_from(fat_cands, day_offset)
     _pick_from(prot_cands, day_offset + 1)
     _pick_from(veg_cands, day_offset)
@@ -566,7 +625,7 @@ def _optimize_mock_grams(
             p100 = max(float(chosen[idx].get("protein_g") or 0.0), 5.0)
             grams[idx] = _round_grams((prot_each / p100) * 100.0, grams_min, grams_max)
 
-        grams[5] = _round_grams(150.0, grams_min, grams_max)
+        grams[5] = _round_grams(250.0, grams_min, grams_max)
 
         fat_so_far = sum(
             float(chosen[i].get("fat_g") or 0.0) * (grams[i] / 100.0) for i in (0, 1, 2, 4, 5)
@@ -585,14 +644,23 @@ def _optimize_mock_grams(
             for f in chosen
         ]
 
+    v_cfg = load_rules()["verifier"]
+    fiber_tol = float(v_cfg.get("fiber_tolerance_pct", v_cfg["macro_tolerance_pct"])) / 100.0
+    fiber_floor = targets.fiber_min_g * (1.0 - fiber_tol) if targets.fiber_min_g > 0 else 0.0
+    max_possible_fiber = sum(
+        float(food.get("fiber_g") or 0.0) * (grams_max / 100.0) for food in chosen
+    )
+    check_fiber = fiber_floor > 0 and max_possible_fiber >= fiber_floor
+
     def _loss(g_list: list[float]) -> float:
-        tot_k = tot_p = tot_f = tot_c = tot_na = tot_sg = 0.0
+        tot_k = tot_p = tot_f = tot_c = tot_fib = tot_na = tot_sg = 0.0
         for food, g in zip(chosen, g_list, strict=True):
             r = g / 100.0
             tot_k += float(food.get("kcal") or 0.0) * r
             tot_p += float(food.get("protein_g") or 0.0) * r
             tot_f += float(food.get("fat_g") or 0.0) * r
             tot_c += float(food.get("carb_g") or 0.0) * r
+            tot_fib += float(food.get("fiber_g") or 0.0) * r
             tot_na += float(food.get("sodium_mg") or 0.0) * r
             tot_sg += float(food.get("sugar_g") or 0.0) * r
 
@@ -602,6 +670,11 @@ def _optimize_mock_grams(
         err_c = ((tot_c - targets.carb_g) / max(targets.carb_g, 1.0)) ** 2
         na_pen = max(0.0, (tot_na - targets.sodium_max_mg) / max(targets.sodium_max_mg, 1.0)) ** 2
         sg_pen = max(0.0, (tot_sg - targets.sugar_max_g) / max(targets.sugar_max_g, 1.0)) ** 2
+        fib_pen = (
+            50.0 * ((fiber_floor - tot_fib) / max(targets.fiber_min_g, 1.0))
+            if check_fiber and tot_fib < fiber_floor
+            else 0.0
+        )
         floor_pen = (
             100.0 + 100.0 * ((targets.kcal_floor - tot_k) / max(targets.kcal_floor, 1.0))
             if tot_k < targets.kcal_floor
@@ -611,6 +684,7 @@ def _optimize_mock_grams(
             3.0 * err_k
             + 3.0 * (err_p + err_f + err_c)
             + 15.0 * (na_pen + sg_pen)
+            + fib_pen
             + floor_pen
         )
 

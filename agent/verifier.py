@@ -1,4 +1,4 @@
-"""Bộ kiểm chứng thực đơn đầy đủ 11 mã vi phạm và cảnh báo DATA_MISSING (SPEC 9.3–9.4)."""
+"""Bộ kiểm chứng thực đơn đầy đủ 12 mã vi phạm và cảnh báo DATA_MISSING (SPEC 9.3–9.4)."""
 
 from typing import Any
 
@@ -140,6 +140,9 @@ def verify_meal_plan(
     grams_max = float(verifier_cfg["grams_max"])
     kcal_tol = float(verifier_cfg["kcal_tolerance_pct"]) / 100.0
     macro_tol = float(verifier_cfg["macro_tolerance_pct"]) / 100.0
+    fiber_tol = float(
+        verifier_cfg.get("fiber_tolerance_pct", verifier_cfg["macro_tolerance_pct"])
+    ) / 100.0
 
     avoid_tags_set, max_purine_level = _collect_need_constraints(active_needs, cfg)
 
@@ -166,6 +169,8 @@ def verify_meal_plan(
         )
 
     day_has_sugar_data: dict[int, bool] = {}
+    day_missing_fiber: dict[int, bool] = {}
+    day_has_known_foods: dict[int, bool] = {}
     known_occurrences: list[tuple[int, str, int]] = []
     seen_missing_food_fields: set[tuple[int, int, str]] = set()
 
@@ -185,6 +190,8 @@ def verify_meal_plan(
             )
 
         has_sugar = False
+        missing_fiber = False
+        has_known_food = False
         for meal in day_plan.meals:
             for item in meal.items:
                 fid = int(item.food_id)
@@ -229,10 +236,13 @@ def verify_meal_plan(
                     continue
 
                 food = food_map[fid]
+                has_known_food = True
                 known_occurrences.append((day_plan.day, meal.meal, fid))
 
                 if not _is_missing_val(food.get("sugar_g")):
                     has_sugar = True
+                if _is_missing_val(food.get("fiber_g")):
+                    missing_fiber = True
 
                 # 4. DATA_MISSING (SPEC 9.4)
                 missing_fields = [
@@ -297,6 +307,8 @@ def verify_meal_plan(
                         )
 
         day_has_sugar_data[day_plan.day] = has_sugar
+        day_missing_fiber[day_plan.day] = missing_fiber
+        day_has_known_foods[day_plan.day] = has_known_food
 
     # 7. ALLERGEN (gọi qua gateway hoặc core nếu test truyền food_db riêng)
     if known_occurrences and profile.allergens:
@@ -409,6 +421,27 @@ def verify_meal_plan(
                         message_vi=(
                             f"Ngày {day_num}: tổng đường {sugar:.1f}g vượt giới hạn "
                             f"{targets.sugar_max_g:.1f}g."
+                        ),
+                        day=day_num,
+                    )
+                )
+
+        # FIBER_LOW (khi đủ dữ liệu chất xơ; dung sai fiber_tolerance_pct / macro_tolerance_pct)
+        if (
+            targets.fiber_min_g > 0
+            and day_has_known_foods.get(day_num, False)
+            and not day_missing_fiber.get(day_num, False)
+        ):
+            fiber = float(day_tot.get("fiber_g", 0.0))
+            min_fiber = targets.fiber_min_g * (1.0 - fiber_tol)
+            if fiber < min_fiber - 1e-9:
+                violations.append(
+                    Violation(
+                        code="FIBER_LOW",
+                        message_vi=(
+                            f"Ngày {day_num}: tổng chất xơ {fiber:.1f}g thấp hơn ngưỡng "
+                            f"{min_fiber:.1f}g (mục tiêu {targets.fiber_min_g:.1f}g, "
+                            f"dung sai -{fiber_tol * 100:.0f}%)."
                         ),
                         day=day_num,
                     )

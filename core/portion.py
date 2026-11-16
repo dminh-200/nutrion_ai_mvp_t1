@@ -19,6 +19,7 @@ def _score_day(day_plan: DayPlan, food_map: dict[int, dict[str, Any]]) -> dict[s
         "protein_g": 0.0,
         "fat_g": 0.0,
         "carb_g": 0.0,
+        "fiber_g": 0.0,
         "sugar_g": 0.0,
         "sodium_mg": 0.0,
     }
@@ -51,8 +52,9 @@ def _day_is_compliant(
     macro_tol: float,
     floor_applies: bool,
     check_macros: bool,
+    fiber_floor: float = 0.0,
 ) -> bool:
-    """Kiểm tra một ngày đã đạt kcal, sàn năng lượng và macro trong ngưỡng cho phép chưa."""
+    """Kiểm tra ngày ăn đã đạt kcal, sàn năng lượng, xơ và macro trong ngưỡng chưa."""
     if floor_applies and tot["kcal"] < targets.kcal_floor:
         return False
     if targets.target_kcal > 0:
@@ -63,6 +65,8 @@ def _day_is_compliant(
             t_val = float(getattr(targets, field))
             if t_val > 0 and abs(tot[field] - t_val) / t_val > macro_tol:
                 return False
+    if fiber_floor > 0 and tot["fiber_g"] < fiber_floor - 1e-9:
+        return False
     return True
 
 
@@ -73,8 +77,9 @@ def _day_loss(
     macro_tol: float,
     floor_applies: bool,
     optimize_macros: bool,
+    fiber_floor: float = 0.0,
 ) -> float:
-    """Hàm mục tiêu ưu tiên kéo ngày ăn vượt sàn, đúng khoảng kcal và cân đối macro."""
+    """Hàm mục tiêu ưu tiên kéo ngày ăn vượt sàn, đúng khoảng kcal, cân macro và đủ chất xơ."""
     kcal = tot["kcal"]
     target_k = targets.target_kcal
     loss = 0.0
@@ -104,6 +109,10 @@ def _day_loss(
             if rel > macro_tol:
                 loss += 150.0 * ((rel - macro_tol) + 0.01)
             loss += rel**2
+
+    if fiber_floor > 0 and tot["fiber_g"] < fiber_floor:
+        loss += 100.0 * ((fiber_floor - tot["fiber_g"]) / fiber_floor + 0.01)
+
     return loss
 
 
@@ -133,8 +142,9 @@ def _refine_day_portions(
     macro_tol: float,
     floor_applies: bool,
     optimize_macros: bool,
+    fiber_floor: float = 0.0,
 ) -> bool:
-    """Tinh chỉnh bước ±5..30g trên các món sẵn có khi còn lệch sàn kcal hoặc macro."""
+    """Tinh chỉnh bước ±5..30g trên các món sẵn có khi còn lệch sàn kcal, macro hoặc chất xơ."""
     items: list[PlannedItem] = [
         item
         for meal in day_plan.meals
@@ -144,9 +154,23 @@ def _refine_day_portions(
     if not items:
         return False
 
+    max_possible_fiber = sum(
+        float(food_map[int(it.food_id)].get("fiber_g") or 0.0) * (grams_max / 100.0)
+        for it in items
+    )
+    active_fiber_floor = (
+        fiber_floor if (fiber_floor > 0 and max_possible_fiber >= fiber_floor) else 0.0
+    )
+
     cur_tot = _score_day(day_plan, food_map)
     if _day_is_compliant(
-        cur_tot, targets, tol_pct, macro_tol, floor_applies, optimize_macros
+        cur_tot,
+        targets,
+        tol_pct,
+        macro_tol,
+        floor_applies,
+        optimize_macros,
+        fiber_floor=active_fiber_floor,
     ):
         return False
 
@@ -169,12 +193,24 @@ def _refine_day_portions(
     for _ in range(45):
         cur_tot = _score_day(day_plan, food_map)
         if _day_is_compliant(
-            cur_tot, targets, tol_pct, macro_tol, floor_applies, optimize_macros
+            cur_tot,
+            targets,
+            tol_pct,
+            macro_tol,
+            floor_applies,
+            optimize_macros,
+            fiber_floor=active_fiber_floor,
         ):
             break
 
         cur_loss = _day_loss(
-            cur_tot, targets, tol_pct, macro_tol, floor_applies, optimize_macros
+            cur_tot,
+            targets,
+            tol_pct,
+            macro_tol,
+            floor_applies,
+            optimize_macros,
+            fiber_floor=active_fiber_floor,
         )
         best_loss = cur_loss
         best_action: tuple[int, float, int | None, float] | None = None
@@ -195,6 +231,7 @@ def _refine_day_portions(
                         macro_tol,
                         floor_applies,
                         optimize_macros,
+                        fiber_floor=active_fiber_floor,
                     )
                     if cand_loss < best_loss - 1e-9:
                         best_loss = cand_loss
@@ -230,6 +267,7 @@ def _refine_day_portions(
                                 macro_tol,
                                 floor_applies,
                                 optimize_macros,
+                                fiber_floor=active_fiber_floor,
                             )
                             if cand_loss < best_loss - 1e-9:
                                 best_loss = cand_loss
@@ -264,6 +302,8 @@ def adjust_portions(
     grams_max = float(v_cfg["grams_max"])
     tol_pct = float(v_cfg["kcal_tolerance_pct"]) / 100.0
     macro_tol = float(v_cfg["macro_tolerance_pct"]) / 100.0
+    fiber_tol = float(v_cfg.get("fiber_tolerance_pct", v_cfg["macro_tolerance_pct"])) / 100.0
+    fiber_floor = targets.fiber_min_g * (1.0 - fiber_tol) if targets.fiber_min_g > 0 else 0.0
     floor_applies = targets.kcal_floor > 0 and targets.target_kcal >= targets.kcal_floor
 
     adjusted = plan.model_copy(deep=True)
@@ -316,6 +356,7 @@ def adjust_portions(
             macro_tol=macro_tol,
             floor_applies=floor_applies,
             optimize_macros=optimize_macros,
+            fiber_floor=fiber_floor,
         ):
             trace_notes.append(
                 f"Ngày {day_plan.day}: đã tinh chỉnh gram món để đạt sàn năng lượng và cân macro"

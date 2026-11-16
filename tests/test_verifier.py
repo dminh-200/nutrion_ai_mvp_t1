@@ -1,4 +1,4 @@
-"""Kiểm thử đầy đủ 11 mã vi phạm verifier (SPEC 9.3) và cảnh báo DATA_MISSING (SPEC 9.4)."""
+"""Kiểm thử 12 mã vi phạm verifier (SPEC 9.3 + FIBER_LOW) và cảnh báo DATA_MISSING."""
 
 from copy import deepcopy
 from typing import Any
@@ -193,6 +193,22 @@ SAMPLE_FOOD_DB: list[dict[str, Any]] = [
         "sugar_g": 0.5,
         "sodium_mg": 20.0,
     },
+    {
+        "id": 12,
+        "code": "T12",
+        "name_vi": "Yến mạch cán dẹt",
+        "food_group": "ngu_coc",
+        "purine_level": "low",
+        "allergen_tags": "",
+        "tags": "ngu_coc_nguyen_hat",
+        "kcal": 389.0,
+        "protein_g": 16.9,
+        "fat_g": 6.9,
+        "carb_g": 66.3,
+        "fiber_g": 10.6,
+        "sugar_g": 0.0,
+        "sodium_mg": 2.0,
+    },
 ]
 
 
@@ -232,32 +248,34 @@ def _base_targets(**overrides: Any) -> NutritionTargets:
 
 
 def _clean_day(day: int = 1) -> DayPlan:
-    # Tổng chuẩn: ~1649.8 kcal, 88.6g P, 53.1g F, 200.9g C, ~159.5mg Na, ~1.2g đường
+    # Tổng chuẩn: ~1628.6 kcal, ~92.9g P, ~54.0g F, ~196.7g C, ~22.2g xơ, ~180mg Na, ~3.1g đường
     return DayPlan(
         day=day,
         meals=[
             Meal(
                 meal="breakfast",
                 items=[
-                    PlannedItem(food_id=1, grams=250.0),
-                    PlannedItem(food_id=2, grams=100.0),
+                    PlannedItem(food_id=1, grams=150.0),
+                    PlannedItem(food_id=12, grams=100.0),
+                    PlannedItem(food_id=2, grams=50.0),
                 ],
             ),
             Meal(
                 meal="lunch",
                 items=[
-                    PlannedItem(food_id=1, grams=250.0),
+                    PlannedItem(food_id=1, grams=150.0),
                     PlannedItem(food_id=2, grams=100.0),
-                    PlannedItem(food_id=3, grams=25.0),
+                    PlannedItem(food_id=3, grams=20.0),
+                    PlannedItem(food_id=11, grams=250.0),
                 ],
             ),
             Meal(
                 meal="dinner",
                 items=[
-                    PlannedItem(food_id=1, grams=200.0),
-                    PlannedItem(food_id=2, grams=30.0),
+                    PlannedItem(food_id=1, grams=100.0),
+                    PlannedItem(food_id=2, grams=40.0),
                     PlannedItem(food_id=3, grams=20.0),
-                    PlannedItem(food_id=11, grams=100.0),
+                    PlannedItem(food_id=11, grams=250.0),
                 ],
             ),
         ],
@@ -518,3 +536,134 @@ def test_data_missing_negative_and_cannot_plan() -> None:
     codes_cp, daily_cp = _verify(MealPlanLLM(days=[], cannot_plan=True, reason="Không đủ món"))
     assert codes_cp == {"CANNOT_PLAN"}
     assert daily_cp == []
+
+
+# --- 13. FIBER_LOW & DỮ LIỆU XƠ ---
+def test_fiber_low_zero_boundary_and_missing_data() -> None:
+    """Kiểm tra FIBER_LOW với 0g chất xơ, tại ngưỡng dung sai, ngưỡng 0% và khi thiếu fiber_g."""
+    # 1) Thực đơn đủ kcal/macro nhưng 0g chất xơ so với mục tiêu 25g -> FIBER_LOW
+    zero_fiber_db = [deepcopy(f) for f in SAMPLE_FOOD_DB]
+    for f in zero_fiber_db:
+        f["fiber_g"] = 0.0
+    plan_zero = MealPlanLLM(days=[_clean_day()])
+    targets_25 = _base_targets(fiber_min_g=25.0)
+    with ToolsGateway(mode="direct") as gw:
+        viols_zero, _ = verify_meal_plan(
+            plan=plan_zero,
+            profile=_base_profile(),
+            targets=targets_25,
+            gateway=gw,
+            food_db=zero_fiber_db,
+        )
+    assert "FIBER_LOW" in {v.code for v in viols_zero}
+
+    # 2) Kiểm tra đúng ngưỡng dung sai 15% của fiber_min_g=25.0 (ngưỡng = 21.25g)
+    exact_food_db = deepcopy(SAMPLE_FOOD_DB)
+    # _clean_day() hiện có 100g id=12 (10.6g) + 500g id=11 (10.0g) + 400g id=1 (1.6g) = 22.2g
+    # Tăng/giảm lượng xơ id=12 để kiểm thử chính xác ngưỡng 21.25g (21.25 -> pass, 21.20 -> fail)
+    exact_food_db[-1]["fiber_g"] = 9.65  # Tổng ngày = 9.65 + 10.0 + 1.6 = 21.25g (chạm ngưỡng)
+    with ToolsGateway(mode="direct") as gw:
+        viols_edge_ok, _ = verify_meal_plan(
+            plan=MealPlanLLM(days=[_clean_day()]),
+            profile=_base_profile(),
+            targets=targets_25,
+            gateway=gw,
+            food_db=exact_food_db,
+        )
+    assert "FIBER_LOW" not in {v.code for v in viols_edge_ok}
+
+    exact_food_db[-1]["fiber_g"] = 9.6  # Tổng ngày = 21.2g (< 21.25g)
+    with ToolsGateway(mode="direct") as gw:
+        viols_edge_fail, _ = verify_meal_plan(
+            plan=MealPlanLLM(days=[_clean_day()]),
+            profile=_base_profile(),
+            targets=targets_25,
+            gateway=gw,
+            food_db=exact_food_db,
+        )
+    assert "FIBER_LOW" in {v.code for v in viols_edge_fail}
+
+    # 3) Khi cấu hình fiber_tolerance_pct = 0 thì dưới 25.0g phải báo FIBER_LOW
+    strict_rules = deepcopy(load_rules())
+    strict_rules["verifier"]["fiber_tolerance_pct"] = 0
+    codes_strict, _ = _verify(
+        MealPlanLLM(days=[_clean_day()]),
+        targets=targets_25,
+        rules=strict_rules,
+    )
+    assert "FIBER_LOW" in codes_strict
+
+    # 4) Khi món ăn thiếu dữ liệu fiber_g=None -> báo DATA_MISSING, không giả lập 0.0g vượt qua
+    missing_db = deepcopy(SAMPLE_FOOD_DB)
+    missing_db[0]["fiber_g"] = None
+    with ToolsGateway(mode="direct") as gw:
+        viols_missing, _ = verify_meal_plan(
+            plan=MealPlanLLM(days=[_clean_day()]),
+            profile=_base_profile(),
+            targets=targets_25,
+            gateway=gw,
+            food_db=missing_db,
+        )
+    missing_codes = {v.code for v in viols_missing}
+    assert "DATA_MISSING" in missing_codes
+    assert "FIBER_LOW" not in missing_codes
+
+
+def test_mock_planner_and_portion_meet_fiber_on_real_food_csv_t2d_gout() -> None:
+    """Mock planner + adjust_portions trên data/food.csv (ĐTĐ + Gout) không rớt FIBER_LOW."""
+    import csv
+    from pathlib import Path
+
+    from agent.llm import generate_mock_meal_plan
+    from core.nutrition import build_targets
+    from core.portion import adjust_portions
+
+    csv_foods: list[dict[str, Any]] = []
+    with Path("data/food.csv").open(encoding="utf-8") as f:
+        for idx, row in enumerate(csv.DictReader(f), start=1):
+            csv_foods.append(
+                {
+                    "id": idx,
+                    "code": row["code"],
+                    "name_vi": row["name_vi"],
+                    "food_group": row["food_group"],
+                    "unit_default_g": float(row["unit_default_g"] or 100.0),
+                    "kcal": float(row["kcal"] or 0.0),
+                    "protein_g": float(row["protein_g"] or 0.0),
+                    "fat_g": float(row["fat_g"] or 0.0),
+                    "carb_g": float(row["carb_g"] or 0.0),
+                    "fiber_g": float(row["fiber_g"] or 0.0),
+                    "sugar_g": float(row["sugar_g"] or 0.0),
+                    "sodium_mg": float(row["sodium_mg"] or 0.0),
+                    "purine_level": row["purine_level"] or "low",
+                    "allergen_tags": row["allergen_tags"] or "",
+                    "tags": row["tags"] or "",
+                }
+            )
+
+    # Lọc món hợp lệ cho ĐTĐ + Gout tương tự node retrieve/allowed_foods
+    allowed = [
+        it
+        for it in csv_foods
+        if it["purine_level"] in ("low", "medium")
+        and not (set(it["tags"].split("|")) & {"duong_cao", "nuoc_ngot", "noi_tang", "bia_ruou"})
+    ]
+    profile = _base_profile(conditions=["t2d", "gout"], days=3)
+    needs = NeedsResult(
+        needs=["kiem_soat_duong_huyet", "han_che_purin"],
+        rule_refs=["NEED_T2D", "NEED_GOUT"],
+    )
+    targets = build_targets(profile, needs)
+    raw_plan = generate_mock_meal_plan(days=3, allowed_foods=allowed, targets=targets)
+    adj_plan, _ = adjust_portions(raw_plan, targets, food_db=allowed)
+    with ToolsGateway(mode="direct") as gw:
+        viols, _ = verify_meal_plan(
+            plan=adj_plan,
+            profile=profile,
+            targets=targets,
+            gateway=gw,
+            needs=needs,
+            allowed_foods=allowed,
+            food_db=allowed,
+        )
+    assert {v.code for v in viols} == set()

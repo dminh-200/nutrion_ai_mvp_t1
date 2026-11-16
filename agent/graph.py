@@ -1,15 +1,19 @@
 """Lắp ghép LangGraph 11 node với SqliteSaver checkpointer và API công khai (SPEC 9.1–9.2)."""
 
+import sqlite3
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 from pydantic import ValidationError
+from sqlalchemy.orm import Session
 
 from agent.nodes import (
     await_review,
@@ -22,12 +26,15 @@ from agent.nodes import (
     plan,
     portion_adjust,
     retrieve,
+    validate_review_decision,
     verify,
 )
 from agent.state import AgentState
 from agent.tools_gateway import ToolsGateway
 from config.settings import get_settings
 from core.schemas import PatientProfile
+from db.repo import get_meal_plan_by_thread
+from db.session import get_engine
 from guardrails.input import validate_profile_input
 from observability.querylog import estimate_cost_usd, upsert_query_log
 from observability.tracing import (
@@ -41,11 +48,62 @@ from observability.tracing import (
 
 MAX_RETRIES = 2
 
+CHECKPOINT_ALLOWED_MSGPACK_MODULES: tuple[tuple[str, str], ...] = (
+    ("core.schemas", "PatientProfile"),
+    ("core.schemas", "NutritionTargets"),
+    ("core.schemas", "NeedsResult"),
+    ("core.schemas", "RiskResult"),
+    ("core.schemas", "GuidelineSnippet"),
+    ("core.schemas", "MealPlanLLM"),
+    ("core.schemas", "DayPlan"),
+    ("core.schemas", "Meal"),
+    ("core.schemas", "PlannedItem"),
+    ("core.schemas", "ScoredItem"),
+    ("core.schemas", "Violation"),
+    ("core.schemas", "ExplainOutput"),
+)
+
+
+@contextmanager
+def open_checkpointer(db_path: str) -> Iterator[SqliteSaver]:
+    """Mở SqliteSaver qua sqlite3.connect kèm JsonPlusSerializer allowlist và đóng kết nối."""
+    if db_path != ":memory:":
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    serde = JsonPlusSerializer(allowed_msgpack_modules=CHECKPOINT_ALLOWED_MSGPACK_MODULES)
+    with closing(sqlite3.connect(db_path, check_same_thread=False)) as conn:
+        saver = SqliteSaver(conn, serde=serde)
+        saver.setup()
+        yield saver
+
+
+def _assert_new_thread_id(thread_id: str, db_path: str) -> None:
+    """Chặn dùng lại thread_id đã tồn tại trong SQLite (MealPlan) hoặc checkpoint."""
+    with Session(get_engine()) as session:
+        existing_plan = get_meal_plan_by_thread(session, thread_id)
+        if existing_plan is not None:
+            raise ValueError(
+                f"thread_id={thread_id!r} đã tồn tại (meal_plan_id={existing_plan.id}, "
+                f"status={existing_plan.status!r}). Mọi yêu cầu run_request mới phải dùng "
+                "thread_id chưa từng tồn tại; thread_id cũ chỉ dùng cho resume_review."
+            )
+    if db_path != ":memory:" and Path(db_path).exists():
+        with open_checkpointer(db_path) as ckpt:
+            if ckpt.get_tuple({"configurable": {"thread_id": thread_id}}) is not None:
+                raise ValueError(
+                    f"thread_id={thread_id!r} đã có checkpoint trước đó. Mọi yêu cầu "
+                    "run_request mới phải dùng thread_id chưa từng tồn tại; "
+                    "thread_id cũ chỉ dùng cho resume_review."
+                )
+
 
 def _route_after_input_guardrail(state: AgentState) -> str:
-    """Rẽ nhánh sau input_guardrail: nguy cơ cao hoặc bị chặn -> finalize; hợp lệ -> classify."""
+    """Rẽ nhánh sau input_guardrail: nguy cơ cao/chặn/cần duyệt -> finalize; đạt -> classify."""
     risk = state.get("risk")
-    if (risk and risk.high_risk) or state.get("status") in ("redirect_to_doctor", "blocked"):
+    if (risk and risk.high_risk) or state.get("status") in (
+        "redirect_to_doctor",
+        "blocked",
+        "needs_human_review",
+    ):
         return "finalize"
     return "classify"
 
@@ -184,6 +242,56 @@ def get_graph_mermaid() -> str:
         return str(graph.get_graph().draw_mermaid())
 
 
+def _extract_safe_trace_context(
+    raw_profile: Any,
+    valid_profile: PatientProfile | None = None,
+) -> tuple[str, str, str, list[str], int | str | None]:
+    """Trích xuất an toàn metadata hồ sơ phục vụ tracing trước/sau khi kiểm tra kiểu."""
+    if valid_profile is not None:
+        raw_display_name = ""
+        if isinstance(raw_profile, dict):
+            dname = raw_profile.get("display_name")
+            raw_display_name = dname if isinstance(dname, str) else ""
+        return (
+            valid_profile.patient_code,
+            raw_display_name,
+            valid_profile.preferences_text,
+            list(valid_profile.conditions),
+            valid_profile.days,
+        )
+
+    if not isinstance(raw_profile, dict):
+        return "UNKNOWN", "", "", [], None
+
+    pcode = raw_profile.get("patient_code")
+    patient_code = str(pcode) if isinstance(pcode, str) and pcode.strip() else "UNKNOWN"
+    dname = raw_profile.get("display_name")
+    raw_display_name = dname if isinstance(dname, str) else ""
+    pref = raw_profile.get("preferences_text")
+    raw_pref_text = pref if isinstance(pref, str) else ""
+
+    cond = raw_profile.get("conditions")
+    if isinstance(cond, (list, tuple, set)):
+        raw_conditions = [str(c) for c in cond]
+    elif cond is None:
+        raw_conditions = []
+    else:
+        raw_conditions = [str(cond)]
+
+    days_val = raw_profile.get("days", 3)
+    if isinstance(days_val, bool) or days_val is None:
+        raw_days: int | str | None = str(days_val) if days_val is not None else None
+    elif isinstance(days_val, int):
+        raw_days = days_val
+    elif isinstance(days_val, str):
+        stripped = days_val.strip()
+        raw_days = int(stripped) if stripped.lstrip("+-").isdigit() else days_val
+    else:
+        raw_days = str(days_val)
+
+    return patient_code, raw_display_name, raw_pref_text, raw_conditions, raw_days
+
+
 def run_request(
     profile: PatientProfile | dict[str, Any],
     *,
@@ -200,25 +308,33 @@ def run_request(
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
     resolved_thread_id = thread_id or f"thread-{uuid4().hex[:12]}"
+    _assert_new_thread_id(resolved_thread_id, db_path)
     resolved_session_id = session_id or f"sess-{uuid4().hex[:12]}"
     resolved_trace_id = create_request_trace_id(resolved_thread_id)
     effective_tools_mode = tools_mode or cfg_settings.TOOLS_MODE
     effective_llm_mode = cfg_settings.LLM_MODE
 
-    if isinstance(profile, PatientProfile):
-        patient_code = profile.patient_code
-        raw_display_name = ""
-        raw_pref_text = profile.preferences_text
-        raw_conditions = list(profile.conditions)
-        raw_days = profile.days
-    else:
-        patient_code = str(profile.get("patient_code", "UNKNOWN"))
-        raw_display_name = str(profile.get("display_name", ""))
-        raw_pref_text = str(profile.get("preferences_text", ""))
-        raw_conditions = list(profile.get("conditions") or [])
-        raw_days = int(profile.get("days", 3) or 3)
-
     t0 = time.perf_counter()
+
+    # Xác thực hồ sơ trước khi tạo dữ liệu trace/ép kiểu nhằm chặn sạch đầu vào sai kiểu
+    if isinstance(profile, PatientProfile):
+        valid_profile: PatientProfile | None = profile
+        validation_err = None
+    else:
+        try:
+            valid_profile = PatientProfile.model_validate(profile)
+            validation_err = None
+        except ValidationError:
+            valid_profile = None
+            _, validation_err = validate_profile_input(
+                profile,
+                session_id=resolved_session_id,
+                log_events=True,
+            )
+
+    patient_code, raw_display_name, raw_pref_text, raw_conditions, raw_days = (
+        _extract_safe_trace_context(profile, valid_profile=valid_profile)
+    )
 
     with trace_request(
         trace_id=resolved_trace_id,
@@ -240,21 +356,6 @@ def run_request(
         preferences_text=raw_pref_text,
         settings=cfg_settings,
     ) as root_span:
-        if isinstance(profile, PatientProfile):
-            valid_profile: PatientProfile | None = profile
-            validation_err = None
-        else:
-            try:
-                valid_profile = PatientProfile.model_validate(profile)
-                validation_err = None
-            except ValidationError:
-                valid_profile = None
-                _, validation_err = validate_profile_input(
-                    profile,
-                    session_id=resolved_session_id,
-                    log_events=True,
-                )
-
         if valid_profile is None and validation_err is not None:
             elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
             blocked_res: dict[str, Any] = {
@@ -325,7 +426,7 @@ def run_request(
         }
         config = {"configurable": {"thread_id": resolved_thread_id}}
 
-        with ToolsGateway(mode=tools_mode) as gw, SqliteSaver.from_conn_string(db_path) as ckpt:
+        with ToolsGateway(mode=tools_mode) as gw, open_checkpointer(db_path) as ckpt:
             graph = build_graph(gw, checkpointer=ckpt)
             raw_result = graph.invoke(initial_state, config=config)
             result = dict(raw_result)
@@ -422,17 +523,27 @@ def resume_review(
 
     if isinstance(decision, dict):
         review_payload: dict[str, Any] = dict(decision)
-        review_payload.setdefault("decision", "approve")
         review_payload.setdefault("note", note)
         review_payload.setdefault("edited_items", list(edited_items or []))
         review_payload.setdefault("reviewer_name", reviewer_name)
-    else:
+    elif isinstance(decision, str):
         review_payload = {
             "decision": decision,
             "note": note,
             "edited_items": list(edited_items or []),
             "reviewer_name": reviewer_name,
         }
+    else:
+        raise ValueError(
+            "Thiếu hoặc sai kiểu quyết định duyệt. Chỉ chấp nhận: approve, edit, reject."
+        )
+
+    validated_decision = validate_review_decision(review_payload.get("decision"))
+    review_payload["decision"] = validated_decision
+    if validated_decision == "edit":
+        raw_edited = review_payload.get("edited_items")
+        if raw_edited is not None and not isinstance(raw_edited, list):
+            raise ValueError("Trường edited_items phải là danh sách khi decision='edit'.")
 
     t0 = time.perf_counter()
     resolved_trace_id = create_request_trace_id(thread_id)
@@ -440,10 +551,28 @@ def resume_review(
     patient_code = "UNKNOWN"
     raw_pref_text = ""
 
-    with ToolsGateway(mode=tools_mode) as gw, SqliteSaver.from_conn_string(db_path) as checkpointer:
+    with Session(get_engine()) as db_sess:
+        existing_plan = get_meal_plan_by_thread(db_sess, thread_id)
+        db_status = existing_plan.status if existing_plan is not None else None
+        db_plan_id = existing_plan.id if existing_plan is not None else None
+
+    with ToolsGateway(mode=tools_mode) as gw, open_checkpointer(db_path) as checkpointer:
         graph = build_graph(gw, checkpointer=checkpointer)
         snapshot = graph.get_state(config)
         snap_vals = snapshot.values if snapshot and isinstance(snapshot.values, dict) else {}
+        next_nodes = tuple(snapshot.next or ()) if snapshot else ()
+        if not snap_vals and existing_plan is None:
+            raise ValueError(
+                f"Không tìm thấy luồng chờ duyệt cho thread_id={thread_id!r}."
+            )
+        current_status = db_status or str(snap_vals.get("status") or "unknown")
+        if "await_review" not in next_nodes or db_status != "pending_review":
+            raise ValueError(
+                f"Luồng {thread_id!r} không còn ở trạng thái chờ duyệt "
+                f"(status={current_status!r}, next={next_nodes!r}, meal_plan_id={db_plan_id}), "
+                f"không thể áp dụng quyết định {validated_decision!r}."
+            )
+
         if snap_vals.get("trace_id"):
             resolved_trace_id = str(snap_vals["trace_id"])
         if snap_vals.get("session_id"):
@@ -474,7 +603,7 @@ def resume_review(
             result["metrics"] = metrics
             result["trace_id"] = resolved_trace_id
 
-            final_status = str(result.get("status", "approved"))
+            final_status = str(result.get("status") or "pending_review")
             violations = result.get("violations") or []
             v_codes = [getattr(v, "code", str(v)) for v in violations]
             retry_count = int(result.get("retry_count", 0))
@@ -496,7 +625,7 @@ def resume_review(
                 retry_count=retry_count,
                 targets=result.get("targets"),
                 plan_scored=result.get("plan_scored"),
-                review_decision=str(review_payload.get("decision", "approve")),
+                review_decision=validated_decision,
                 settings=cfg_settings,
             )
 
@@ -507,7 +636,7 @@ def resume_review(
     upsert_query_log(
         session_id=str(result.get("session_id", session_id)),
         patient_code=res_pcode,
-        status=str(result.get("status", "approved")),
+        status=final_status,
         meal_plan_id=result.get("meal_plan_id"),
         latency_ms=float((result.get("metrics") or {}).get("latency_ms", elapsed_ms)),
         llm_calls=int((result.get("metrics") or {}).get("llm_calls", 0)),

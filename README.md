@@ -33,6 +33,8 @@ make seed         # Tạo 30 bệnh nhân giả lập (data/patients_seed.json)
 make ingest       # Nạp tài liệu hướng dẫn vào ChromaDB (RAG)
 make mcp-dev      # Chạy MCP server kèm MCP Inspector
 make test         # Chạy pytest mặc định (-m "not slow")
+make test-fast    # Chạy pytest nhanh không gồm MCP (-m "not slow and not mcp", an toàn trong sandbox)
+make test-mcp     # Chạy riêng 2 test MCP (-m mcp, cần quyền loopback ngoài sandbox)
 make eval-rag     # Đánh giá truy xuất RAG (retrieval_hit@4) trên evals/rag_questions.json
 make check-rules  # Kiểm tra cờ TODO_VERIFY trong config/*.yaml
 make lint         # Kiểm tra code bằng ruff
@@ -48,6 +50,10 @@ $env:LLM_MODE = "mock"
 .venv\Scripts\pytest.exe -q -m "not slow"
 .venv\Scripts\python.exe -m evals.rag_eval --k 4
 ```
+
+> **Lưu ý khi chạy pytest trong sandbox Windows:** Nếu chạy agent trong môi trường sandbox chặn TCP loopback (`127.0.0.1`), không chạy gộp `-m "not slow"` (test `@pytest.mark.mcp` sẽ fail-fast ngay nhờ kiểm tra tại `tests/conftest.py` để tránh treo `socketpair`). Thay vào đó chạy tách 2 lệnh:
+> - Trong sandbox: `.venv\Scripts\pytest.exe -q -m "not slow and not mcp"`
+> - Ngoài sandbox (`BypassSandbox`): `.venv\Scripts\pytest.exe -q -m mcp`
 
 ## Chạy MCP server và thử bằng Inspector
 

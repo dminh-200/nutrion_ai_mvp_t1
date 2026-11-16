@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -13,8 +14,88 @@ from core.allergen import check_allergen
 from core.schemas import GuidelineSnippet, MealPlanLLM, NutritionTargets, PatientProfile
 from guardrails.input import load_guardrails_config, log_guardrail_event, normalize_text
 
+logger = logging.getLogger(__name__)
+
 _CITATION_PATTERN = re.compile(r"\[([^,\[\]]+?)\s*,\s*tr\.?\s*([^\[\]]+?)\]")
 _BULLET_LINE_PATTERN = re.compile(r"^\s*(?:[-•*]|\d+\.)\s+")
+_BLOCK_PREFIX_PATTERN = re.compile(r"^\s*(?:[-•*]|\d+\.|#{1,6}|>+)\s+")
+_NON_SPLIT_DOT_PREFIX_RE = re.compile(
+    r"(?:^|\b)(?:tr|vd|bs|ts|ths|pgs|gs)$",
+    flags=re.IGNORECASE,
+)
+
+
+def _split_sentences(text: str, *, split_semicolon: bool = False) -> list[str]:
+    """Tách câu văn xuôi mà không cắt ngang [...] trích dẫn hay viết tắt như tr. 12."""
+    delimiters = {".", "!", "?"}
+    if split_semicolon:
+        delimiters.add(";")
+
+    sentences: list[str] = []
+    bracket_depth = 0
+    paren_depth = 0
+    start = 0
+    n = len(text)
+    i = 0
+    while i < n:
+        ch = text[i]
+        if ch == "[":
+            bracket_depth += 1
+        elif ch == "]" and bracket_depth > 0:
+            bracket_depth -= 1
+        elif ch == "(":
+            paren_depth += 1
+        elif ch == ")" and paren_depth > 0:
+            paren_depth -= 1
+        elif (
+            ch in delimiters
+            and bracket_depth == 0
+            and paren_depth == 0
+            and i + 1 < n
+            and text[i + 1].isspace()
+        ):
+            prefix = text[start:i]
+            if ch == "." and _NON_SPLIT_DOT_PREFIX_RE.search(prefix):
+                i += 1
+                continue
+            segment = text[start : i + 1].strip()
+            if segment:
+                sentences.append(segment)
+            j = i + 1
+            while j < n and text[j].isspace():
+                j += 1
+            start = j
+            i = j
+            continue
+        i += 1
+
+    tail = text[start:].strip()
+    if tail:
+        sentences.append(tail)
+    return sentences
+
+_PROSE_RECOMMENDATION_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\b(?:ban|quy\s+vi|nguoi\s+benh|benh\s+nhan)\s+"
+        r"(?:nen|can|hay|phai|khong\s+nen|khong\s+duoc|tranh)\b"
+    ),
+    re.compile(
+        r"^(?:nen|hay|can|tranh|han\s+che|kieng|tang\s+cuong|bo\s+sung|uu\s+tien|"
+        r"cat\s+giam|chia\s+nho|duy\s+tri)\s+"
+    ),
+    re.compile(
+        r"\b(?:khuyen\s+nghi|khuyen\s+cao|khong\s+nen\s+an|nen\s+an|nen\s+uong|"
+        r"hay\s+an|hay\s+uong|tranh\s+an|han\s+che\s+an|kieng\s+an|bo\s+sung\s+them|"
+        r"tang\s+cuong\s+an|cat\s+giam|chia\s+nho\s+bua)\b"
+    ),
+    re.compile(
+        r"\b(?:giup\s+(?:ha|giam|kiem\s+soat|on\s+dinh|cai\s+thien|phong)|"
+        r"co\s+tac\s+dung|rat\s+tot\s+cho|lam\s+tang|gay\s+tang|ngan\s+ngua)\b"
+    ),
+    re.compile(
+        r"\btheo\s+(?:huong\s+dan|tai\s+lieu|khuyen\s+cao|nghien\s+cuu|chuyen\s+gia|bac\s+si)\b"
+    ),
+)
 
 
 @dataclass
@@ -62,7 +143,7 @@ def _remove_forbidden_sentences(
     text: str,
     forbidden_cfg: dict[str, Any],
 ) -> tuple[str, bool]:
-    """Xóa từng câu chứa nội dung cấm trong explanation_md nhưng vẫn giữ cấu trúc dòng."""
+    """Xóa từng câu chứa nội dung y khoa cấm trên mọi cấu trúc văn bản (đoạn văn, bullet, bảng)."""
     if not text.strip():
         return "", False
 
@@ -74,14 +155,23 @@ def _remove_forbidden_sentences(
             out_lines.append("")
             continue
 
-        bullet_prefix = ""
-        body = line
-        bullet_match = _BULLET_LINE_PATTERN.match(line)
-        if bullet_match:
-            bullet_prefix = bullet_match.group(0)
-            body = line[len(bullet_prefix) :]
+        stripped = line.lstrip()
+        if stripped.startswith("|") and stripped.endswith("|"):
+            # Hàng bảng markdown: bỏ cả hàng nếu bất kỳ ô nào chứa nội dung cấm
+            if _is_forbidden_sentence(stripped, forbidden_cfg):
+                changed = True
+                continue
+            out_lines.append(line)
+            continue
 
-        sentences = [s for s in re.split(r"(?<=[.!?])\s+", body) if s.strip()]
+        prefix = ""
+        body = line
+        prefix_match = _BLOCK_PREFIX_PATTERN.match(line)
+        if prefix_match:
+            prefix = prefix_match.group(0)
+            body = line[len(prefix) :]
+
+        sentences = [s for s in _split_sentences(body, split_semicolon=True) if s.strip()]
         if not sentences:
             continue
         kept_sentences: list[str] = []
@@ -92,7 +182,12 @@ def _remove_forbidden_sentences(
                 kept_sentences.append(sent)
 
         if kept_sentences:
-            out_lines.append(f"{bullet_prefix}{' '.join(kept_sentences)}".rstrip())
+            joined = " ".join(kept_sentences).strip()
+            meaningful = _CITATION_PATTERN.sub("", joined).strip(" .,;:-•*")
+            if meaningful:
+                out_lines.append(f"{prefix}{joined}".rstrip())
+            else:
+                changed = True
 
     return "\n".join(out_lines).strip(), changed
 
@@ -117,11 +212,25 @@ def _citation_matches_snippets(
     return False
 
 
-def _enforce_bullet_citations(
+def _is_prose_recommendation_sentence(sentence: str) -> bool:
+    """Phát hiện câu khuyến nghị lâm sàng/dinh dưỡng viết dạng đoạn văn xuôi."""
+    stripped = sentence.strip()
+    if not stripped:
+        return False
+    # Bỏ qua tiêu đề mục ngắn kết thúc bằng dấu ':' (ví dụ: "Khuyến nghị chính:")
+    if stripped.endswith(":") and len(stripped) <= 80 and "." not in stripped:
+        return False
+    norm = normalize_text(stripped)
+    if not norm:
+        return False
+    return any(pat.search(norm) for pat in _PROSE_RECOMMENDATION_PATTERNS)
+
+
+def _enforce_citations(
     text: str,
     snippets: list[GuidelineSnippet],
 ) -> tuple[str, bool]:
-    """Xóa mọi gạch đầu dòng khuyến nghị thiếu trích dẫn hợp lệ khớp snippets."""
+    """Xóa gạch đầu dòng hoặc câu khuyến nghị văn xuôi thiếu trích dẫn hợp lệ khớp snippets."""
     if not text.strip():
         return "", False
 
@@ -133,29 +242,53 @@ def _enforce_bullet_citations(
                 kept_lines.append(line)
             else:
                 removed_any = True
-        else:
+            continue
+
+        if not line.strip() or line.strip() == "---":
             kept_lines.append(line)
+            continue
+
+        prefix = ""
+        body = line
+        prefix_match = _BLOCK_PREFIX_PATTERN.match(line)
+        if prefix_match:
+            prefix = prefix_match.group(0)
+            body = line[len(prefix) :]
+
+        sentences = [s for s in _split_sentences(body, split_semicolon=False) if s.strip()]
+        if not sentences:
+            continue
+
+        kept_sentences: list[str] = []
+        for sent in sentences:
+            has_cit_tag = bool(_CITATION_PATTERN.search(sent))
+            if has_cit_tag:
+                if _citation_matches_snippets(sent, snippets):
+                    kept_sentences.append(sent)
+                else:
+                    removed_any = True
+            elif _is_prose_recommendation_sentence(sent):
+                removed_any = True
+            else:
+                kept_sentences.append(sent)
+
+        if kept_sentences:
+            kept_lines.append(f"{prefix}{' '.join(kept_sentences)}".rstrip())
 
     return "\n".join(kept_lines).strip(), removed_any
 
 
-def _extract_valid_food_ids(
-    plan_llm: MealPlanLLM | None,
-    allowed_foods: list[dict[str, Any]] | None,
-) -> list[int]:
-    """Lấy các food_id có trong plan_llm và tồn tại trong allowed_foods."""
+def _extract_plan_food_ids(plan_llm: MealPlanLLM | None) -> list[int]:
+    """Lấy toàn bộ food_id duy nhất có trong plan_llm để kiểm tra dị ứng fail-closed."""
     if plan_llm is None or plan_llm.cannot_plan:
         return []
-    known_ids = (
-        {int(f["id"]) for f in allowed_foods if "id" in f}
-        if allowed_foods
-        else None
-    )
     ids: list[int] = []
+    seen: set[int] = set()
     for day in plan_llm.days:
         for meal in day.meals:
             for item in meal.items:
-                if known_ids is None or item.food_id in known_ids:
+                if item.food_id not in seen:
+                    seen.add(item.food_id)
                     ids.append(item.food_id)
     return ids
 
@@ -206,25 +339,26 @@ def evaluate_output_guardrail(
             output_flags.append("forbidden_output")
         _record("forbidden_output", "Đã xóa câu chứa từ ngữ/chỉ định y khoa bị cấm ở đầu ra.")
 
-    # 2. Xóa gạch đầu dòng khuyến nghị thiếu trích nguồn hợp lệ
-    clean_text, has_missing_cit = _enforce_bullet_citations(clean_text, list(snippets or []))
+    # 2. Xóa khuyến nghị (bullet và văn xuôi) thiếu trích nguồn hợp lệ hoặc bịa nguồn
+    clean_text, has_missing_cit = _enforce_citations(clean_text, list(snippets or []))
     if has_missing_cit:
         if "missing_citation" not in output_flags:
             output_flags.append("missing_citation")
-        _record("missing_citation", "Đã xóa gạch đầu dòng khuyến nghị thiếu trích dẫn hợp lệ.")
+        _record("missing_citation", "Đã xóa nội dung khuyến nghị thiếu trích dẫn hợp lệ.")
+
+    wiped_empty = (not clean_text.strip()) and (has_forbidden or has_missing_cit)
+    if wiped_empty:
+        clean_text = (
+            "**Lưu ý:** Nội dung giải thích tự động đã bị ẩn do vi phạm quy tắc an toàn y khoa "
+            "hoặc thiếu nguồn trích dẫn hợp lệ. Hồ sơ cần chuyên gia dinh dưỡng xem xét trực tiếp."
+        )
 
     if notice_vi.strip() and notice_vi.strip() not in clean_text:
         clean_text = f"{clean_text}\n\n{notice_vi.strip()}".strip()
 
-    # 3. Luôn chèn disclaimer cố định từ config (không để LLM tự viết)
-    if clean_text:
-        final_md = f"{clean_text}\n\n---\n{disclaimer}"
-    else:
-        final_md = f"---\n{disclaimer}"
-
-    # 4. Kiểm tra phòng thủ nhiều lớp cuối cùng: dị ứng + sàn năng lượng trên plan_scored
+    # 3. Phòng thủ nhiều lớp cuối: dị ứng (fail-closed) + sàn năng lượng trên plan_scored
     if profile is not None and profile.allergens and plan_llm is not None:
-        food_ids = _extract_valid_food_ids(plan_llm, allowed_foods)
+        food_ids = _extract_plan_food_ids(plan_llm)
         if food_ids:
             try:
                 if gateway is not None:
@@ -233,16 +367,29 @@ def evaluate_output_guardrail(
                     alg_violations = check_allergen(
                         food_ids, list(profile.allergens), food_db=allowed_foods
                     )
-            except ValueError:
-                alg_violations = []
-            if alg_violations:
-                if "allergen" not in output_flags:
-                    output_flags.append("allergen")
+            except Exception as exc:
+                logger.exception("Kiểm tra dị ứng thất bại tại output_guardrail: %s", exc)
+                if "allergen_check_failed" not in output_flags:
+                    output_flags.append("allergen_check_failed")
                 _record(
                     "allergen",
-                    "Phát hiện món chứa dị nguyên tại output_guardrail: "
-                    + "; ".join(v.message_vi for v in alg_violations),
+                    "Không xác minh được dị nguyên do lỗi hệ thống kiểm tra "
+                    f"({type(exc).__name__}): {exc}",
                 )
+                warn_msg = (
+                    "**CẢNH BÁO AN TOÀN:** Hệ thống không thể xác minh thành phần gây dị ứng "
+                    "cho thực đơn này do lỗi kiểm tra dị nguyên. Cần chuyên gia rà soát thủ công."
+                )
+                clean_text = f"{clean_text}\n\n{warn_msg}".strip() if clean_text else warn_msg
+            else:
+                if alg_violations:
+                    if "allergen" not in output_flags:
+                        output_flags.append("allergen")
+                    _record(
+                        "allergen",
+                        "Phát hiện món chứa dị nguyên tại output_guardrail: "
+                        + "; ".join(v.message_vi for v in alg_violations),
+                    )
 
     if targets is not None and plan_scored:
         low_days = [
@@ -258,7 +405,19 @@ def evaluate_output_guardrail(
                 f"Ngày {', '.join(low_days)} dưới sàn {targets.kcal_floor:.0f} kcal.",
             )
 
-    unfixable = bool(violations) or ("allergen" in output_flags) or ("energy_floor" in output_flags)
+    # 4. Luôn chèn disclaimer cố định từ config (không để LLM tự viết)
+    if clean_text:
+        final_md = f"{clean_text}\n\n---\n{disclaimer}"
+    else:
+        final_md = f"---\n{disclaimer}"
+
+    unfixable = (
+        bool(violations)
+        or ("allergen" in output_flags)
+        or ("allergen_check_failed" in output_flags)
+        or ("energy_floor" in output_flags)
+        or wiped_empty
+    )
     status = "needs_human_review" if unfixable else "pending_review"
     return OutputGuardrailResult(
         explanation_md=final_md,

@@ -34,5 +34,9 @@ Trước khi dùng API của bất kỳ thư viện nào ở trên: kiểm tra p
 5. Không commit .env, db/*.db, rag/chroma/, .cache/.
 
 ## Lệnh thường dùng
-make setup | make init-db | make seed | make ingest | make mcp-dev | make run | make test | make eval | make lint
-- Test mặc định: `.venv/Scripts/python.exe -m pytest -q -m "not slow"`
+make setup | make init-db | make seed | make ingest | make mcp-dev | make run | make test | make test-fast | make test-mcp | make eval | make lint
+- Test mặc định (máy host / ngoài sandbox): `.venv/Scripts/python.exe -m pytest -q -m "not slow"`
+- **Khi agent chạy pytest trong sandbox Windows (bắt buộc tách 2 lệnh để không bị treo socketpair):**
+  - Bộ test nhanh trong sandbox (`BypassSandbox: false`): `$env:LLM_MODE='mock'; .venv/Scripts/python.exe -m pytest -q -m "not slow and not mcp"`
+  - Bộ test MCP chạy riêng ngoài sandbox (`BypassSandbox: true`): `$env:LLM_MODE='mock'; .venv/Scripts/python.exe -m pytest -q -m mcp`
+  - Không bao giờ chạy gộp `-m "not slow"` hoặc để trống bộ lọc MCP trong sandbox; `tests/conftest.py` sẽ fail-fast ngay nếu loopback bị chặn.

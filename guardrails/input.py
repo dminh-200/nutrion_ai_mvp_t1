@@ -19,7 +19,11 @@ from sqlalchemy.orm import Session
 from unidecode import unidecode
 
 from config.settings import Settings, get_settings
-from core.classify import assess_risk, load_risk_rules
+from core.classify import (
+    TextRiskAssessment,
+    assess_risk,
+    assess_text_risk_details,
+)
 from core.nutrition import calc_bmi
 from core.schemas import PatientProfile, RiskResult
 from db.repo import create_guardrail_event
@@ -78,7 +82,7 @@ class SafetyClassificationLLM(BaseModel):
 class InputGuardrailResult:
     """Kết quả tổng hợp sau khi chạy input guardrail."""
 
-    action: Literal["pass", "blocked", "redirect_to_doctor"]
+    action: Literal["pass", "blocked", "redirect_to_doctor", "needs_human_review"]
     profile: PatientProfile | None = None
     risk: RiskResult | None = None
     flags: list[str] = field(default_factory=list)
@@ -192,45 +196,8 @@ def _assess_text_high_risk(
     text: str,
     risk_rules: dict[str, Any] | None = None,
 ) -> RiskResult:
-    """Kiểm tra từ khóa nguy cơ cao trong preferences_text (hỗ trợ cả tiếng Việt không dấu)."""
-    if not text or not text.strip():
-        return RiskResult(high_risk=False)
-
-    cfg = risk_rules or load_risk_rules()
-    rules_cfg = cfg["rules"]
-    raw_lower = text.lower()
-    norm = normalize_text(text)
-
-    reasons: list[str] = []
-    messages: list[str] = []
-
-    for code, rule_data in rules_cfg.items():
-        for kw in rule_data.get("keywords", []):
-            kw_lower = kw.lower()
-            kw_norm = normalize_text(kw)
-            matched = False
-            if kw_lower in raw_lower:
-                # Tránh hiểu nhầm từ "bầu" trong "bí bầu"/"canh bầu"
-                if kw_lower == "bầu" and re.search(r"(bí|canh|quả|trái)\s+bầu", raw_lower):
-                    matched = False
-                else:
-                    matched = True
-            elif kw_norm and kw_norm != "bau" and kw_norm in norm:
-                matched = True
-            elif kw_norm == "bau" and re.search(r"\b(co|dang|me|ba)\s+bau\b", norm):
-                matched = True
-
-            if matched:
-                if code not in reasons:
-                    reasons.append(code)
-                    messages.append(rule_data["message_vi"])
-                break
-
-    return RiskResult(
-        high_risk=bool(reasons),
-        reasons=reasons,
-        message_vi=" ".join(messages),
-    )
+    """Kiểm tra từ khóa nguy cơ cao trong preferences_text theo ngữ cảnh từng vị trí."""
+    return assess_text_risk_details(text, risk_rules=risk_rules).confirmed
 
 
 def _strip_clauses_matching(
@@ -435,6 +402,39 @@ def validate_profile_input(
     return profile, None
 
 
+_ALLERGEN_TERMS: dict[str, tuple[str, ...]] = {
+    "peanut": ("lac", "dau phong", "peanut"),
+    "seafood": ("hai san", "tom", "cua", "muc", "ngheu", "so", "oc", "seafood"),
+    "milk": ("sua bo", "pho mai", "sua", "milk", "dairy"),
+    "egg": ("trung", "egg"),
+    "gluten": ("gluten", "lua mi", "banh mi"),
+    "soy": ("dau nanh", "dau phu", "dau hu", "soy"),
+}
+_INCLUDE_VERB_RE = re.compile(
+    r"\b(?:chon|them|dua|cho|xep|uu\s+tien|bat\s+buoc|muon\s+an|can\s+co|select|add|include|put)\b"
+)
+_ALLERGEN_CLAUSE_NEG_RE = re.compile(
+    r"\b(?:khong|tranh|dung|bo|kieng|di\s+ung|not|no|avoid|without)\b"
+)
+
+
+def _detect_allergen_override(norm_text: str, allergens: list[str]) -> str | None:
+    """Phát hiện chỉ dẫn yêu cầu đưa món chứa chính dị nguyên của bệnh nhân vào thực đơn."""
+    if not norm_text or not allergens:
+        return None
+    for clause in re.split(r"[.!?;,\n]+", norm_text):
+        part = clause.strip()
+        if not part or _ALLERGEN_CLAUSE_NEG_RE.search(part):
+            continue
+        if not _INCLUDE_VERB_RE.search(part):
+            continue
+        for alg in allergens:
+            for term in _ALLERGEN_TERMS.get(alg, ()):
+                if re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", part):
+                    return f"allergen_override:{alg}"
+    return None
+
+
 def evaluate_input_guardrail(
     raw_profile: PatientProfile | dict[str, Any],
     *,
@@ -509,6 +509,8 @@ def evaluate_input_guardrail(
         inj_cfg.get("regex_patterns", []),
         extra_texts=(leet_text, despaced_text),
     )
+    if inj_hit is None:
+        inj_hit = _detect_allergen_override(norm_text, list(profile.allergens))
     if "injection" in flags or inj_hit is not None:
         if "injection" not in flags:
             flags.append("injection")
@@ -526,21 +528,53 @@ def evaluate_input_guardrail(
             events=events,
         )
 
-    # 4. Nguy cơ cao qua văn bản preferences_text (RISK_TEXT)
-    text_risk = _assess_text_high_risk(raw_text, risk_rules=risk_rules)
+    # 4. Nguy cơ cao / cấp cứu / nghi ngờ chưa xác định qua văn bản preferences_text (RISK_TEXT)
+    text_assessment: TextRiskAssessment = assess_text_risk_details(raw_text, risk_rules=risk_rules)
+    text_risk = text_assessment.confirmed
     if text_risk.high_risk:
         for r_code in text_risk.reasons:
             if r_code not in flags:
                 flags.append(r_code)
         _record("high_risk", f"Nguy cơ cao từ ghi chú: {','.join(text_risk.reasons)}")
+        header = (
+            "**CẢNH BÁO CẤP CỨU Y KHOA:**"
+            if "RISK_EMERGENCY" in text_risk.reasons
+            else "**Khuyến nghị thăm khám trực tiếp:**"
+        )
         return InputGuardrailResult(
             action="redirect_to_doctor",
             profile=profile,
             risk=text_risk,
             flags=flags,
             cleaned_preferences_text="",
+            blocked_message_vi=f"{header} {text_risk.message_vi}\n\n---\n{disclaimer}",
+            events=events,
+        )
+
+    if text_assessment.ambiguous_reasons:
+        for r_code in text_assessment.ambiguous_reasons:
+            if r_code not in flags:
+                flags.append(r_code)
+        if "ambiguous_high_risk" not in flags:
+            flags.append("ambiguous_high_risk")
+        _record(
+            "high_risk",
+            "Ghi chú có dấu hiệu nguy cơ cao chưa rõ "
+            f"({','.join(text_assessment.ambiguous_reasons)}), chuyển chuyên gia duyệt.",
+        )
+        return InputGuardrailResult(
+            action="needs_human_review",
+            profile=profile,
+            risk=RiskResult(
+                high_risk=False,
+                reasons=list(text_assessment.ambiguous_reasons),
+                message_vi=text_assessment.ambiguous_message_vi,
+            ),
+            flags=flags,
+            cleaned_preferences_text="",
             blocked_message_vi=(
-                f"**Khuyến nghị thăm khám trực tiếp:** {text_risk.message_vi}\n\n---\n{disclaimer}"
+                f"**Cần chuyên gia xem xét trực tiếp:** {text_assessment.ambiguous_message_vi}"
+                f"\n\n---\n{disclaimer}"
             ),
             events=events,
         )

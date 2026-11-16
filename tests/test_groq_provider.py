@@ -453,18 +453,19 @@ def test_groq_compact_foods_format() -> None:
     lines = compact.strip().splitlines()
     assert len(lines) == 2
 
-    # id|code|name_vi|food_group|unit_default_g|kcal|protein|fat|carb|sodium|purine|tags
+    # id|code|name_vi|food_group|unit_default_g|kcal|protein|fat|carb|fiber|sodium|purine|tags
     first = lines[0]
     parts = first.split("|")
-    assert len(parts) == 12
+    assert len(parts) == 13
     assert parts[0] == "1"
     assert parts[1] == "VN001"
     assert parts[2] == "Cơm gạo tẻ"
     assert parts[3] == "ngu_coc"
     assert parts[4] == "150"
     assert parts[5] == "130.0"
-    assert parts[10] == "low"
-    assert parts[11] == "tinh_bot"
+    assert parts[9] == "0.0"
+    assert parts[11] == "low"
+    assert parts[12] == "tinh_bot"
 
     # Kiểm tra prompt dựng với provider="groq" có chứa yêu cầu minified và dưới 700 tokens
     prompt = build_planner_prompt(

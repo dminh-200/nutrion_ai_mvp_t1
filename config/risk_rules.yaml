@@ -8,19 +8,71 @@ thresholds:
     status: TODO_VERIFY
 
 rules:
+  RISK_EMERGENCY:
+    message_vi: "CẢNH BÁO KHẨN CẤP: Các dấu hiệu bạn mô tả có thể là tình trạng cấp cứu y khoa nguy hiểm. Vui lòng ngừng sử dụng ứng dụng, gọi ngay 115 hoặc đến cơ sở y tế gần nhất để được cấp cứu kịp thời."
+    keywords:
+      - "bất tỉnh"
+      - "hôn mê"
+      - "ngất xỉu"
+      - "ngất lịm"
+      - "co giật"
+      - "sốc phản vệ"
+      - "khó thở dữ dội"
+      - "khó thở cấp"
+      - "ngạt thở"
+      - "đau thắt ngực"
+      - "đau ngực dữ dội"
+      - "nôn ra máu"
+      - "ho ra máu"
+      - "đi ngoài ra máu"
+      - "xuất huyết tiêu hóa"
+      - "đường huyết rất thấp"
+      - "đường huyết quá thấp"
+      - "đường huyết tụt"
+      - "tụt đường huyết"
+      - "hạ đường huyết nặng"
+      - "hạ đường huyết quá thấp"
+      - "tụt huyết áp nặng"
+      - "huyết áp tụt mạnh"
+      - "cấp cứu ngay"
+      - "cần cấp cứu"
+      - "đi cấp cứu"
+      - "đang cấp cứu"
+      - "méo miệng"
+      - "liệt nửa người"
+      - "nói ngọng đột ngột"
   RISK_PREG:
     message_vi: "Nhu cầu dinh dưỡng khi mang thai cần bác sĩ sản khoa hoặc chuyên gia dinh dưỡng tư vấn trực tiếp."
     keywords:
       - "mang thai"
       - "có thai"
-      - "bầu"
       - "thai kỳ"
+      - "thai nhi"
+      - "thai phụ"
+      - "mang bầu"
+      - "có bầu"
+      - "đang bầu"
+      - "bầu bí"
+      - "bà bầu"
+      - "mẹ bầu"
+      - "có em bé"
+      - "đang có em bé"
+      - "sắp sinh em bé"
+      - "em bé trong bụng"
+      - "dưỡng thai"
+      - "tam cá nguyệt"
+      - "tuần thai"
+      - "ốm nghén"
+      - "cấn thai"
+      - "cấn bầu"
+      - "bầu"
   RISK_LACT:
     message_vi: "Giai đoạn cho con bú cần được tư vấn trực tiếp."
     keywords:
       - "cho con bú"
       - "đang cho bú"
       - "nuôi con bằng sữa mẹ"
+      - "vắt sữa cho con"
   RISK_MINOR:
     message_vi: "Hệ thống chỉ hỗ trợ người từ 18 tuổi."
     keywords: []
@@ -30,12 +82,14 @@ rules:
       - "lọc máu"
       - "chạy thận"
       - "suy thận"
+      - "thận nhân tạo"
   RISK_ED:
     message_vi: "Vui lòng trao đổi với bác sĩ hoặc chuyên gia tâm lý – dinh dưỡng."
     keywords:
       - "biếng ăn"
       - "rối loạn ăn uống"
       - "nôn ói sau ăn"
+      - "móc họng sau ăn"
   RISK_BMI_LOW:
     message_vi: "Chỉ số cơ thể rất thấp, cần thăm khám trực tiếp."
     keywords: []

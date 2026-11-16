@@ -1,4 +1,4 @@
-.PHONY: setup init-db import-food seed ingest mcp-dev run test eval eval-rag check-rules lint
+.PHONY: setup init-db import-food seed ingest mcp-dev run test test-fast test-mcp eval eval-rag check-rules lint
 
 PYTHON := .venv/Scripts/python
 PYTEST := .venv/Scripts/pytest
@@ -28,6 +28,12 @@ run:
 
 test:
 	$(PYTHON) -m pytest -q -m "not slow"
+
+test-fast:
+	$(PYTHON) -m pytest -q -m "not slow and not mcp"
+
+test-mcp:
+	$(PYTHON) -m pytest -q -m mcp
 
 eval:
 	$(PYTHON) -m evals.run_eval

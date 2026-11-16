@@ -31,7 +31,7 @@ def sanitize_user_data(text: str) -> str:
 
 
 def format_allowed_foods_compact(allowed_foods: list[dict[str, Any]]) -> str:
-    """Định dạng danh sách món được phép dạng gọn: id|tên|kcal/100g|nhóm|tags."""
+    """Định dạng danh sách món được phép dạng gọn: id|tên|kcal/100g|nhóm|tags|xơ_g."""
     if not allowed_foods:
         return "Không có món hợp lệ."
     lines: list[str] = []
@@ -42,7 +42,9 @@ def format_allowed_foods_compact(allowed_foods: list[dict[str, Any]]) -> str:
         kcal_str = f"{float(kcal):.1f}" if kcal is not None else "0.0"
         group = str(food.get("food_group", "khac")).replace("|", "/")
         tags = str(food.get("tags", "")).strip() or "-"
-        lines.append(f"{fid}|{name_vi}|{kcal_str}|{group}|{tags}")
+        fiber = food.get("fiber_g")
+        fiber_str = f"{float(fiber):.1f}" if fiber is not None else "0.0"
+        lines.append(f"{fid}|{name_vi}|{kcal_str}|{group}|{tags}|{fiber_str}")
     return "\n".join(lines)
 
 
@@ -97,12 +99,14 @@ def format_allowed_foods_compact_groq(allowed_foods: list[dict[str, Any]]) -> st
         f_str = f"{float(f):.1f}" if f is not None else "0.0"
         c = food.get("carb_g")
         c_str = f"{float(c):.1f}" if c is not None else "0.0"
+        fib = food.get("fiber_g")
+        fib_str = f"{float(fib):.1f}" if fib is not None else "0.0"
         na = food.get("sodium_mg")
         na_str = f"{float(na):.0f}" if na is not None else "0"
         purine = str(food.get("purine_level", "low")).strip()
         tags = str(food.get("tags", "")).strip() or "-"
         lines.append(
-            f"{fid}|{code}|{name_vi}|{group}|{unit_str}|{kcal_str}|{p_str}|{f_str}|{c_str}|{na_str}|{purine}|{tags}"
+            f"{fid}|{code}|{name_vi}|{group}|{unit_str}|{kcal_str}|{p_str}|{f_str}|{c_str}|{fib_str}|{na_str}|{purine}|{tags}"
         )
     return "\n".join(lines)
 
@@ -152,13 +156,23 @@ def _curate_foods_for_alibaba(
     for food in allowed_foods:
         buckets.setdefault(_food_role_bucket(food), []).append(food)
 
-    def _clean_rank(food: dict[str, Any]) -> tuple[int, int, int, float, int]:
+    def _clean_rank(food: dict[str, Any]) -> tuple[int, int, int, int, float, float, int]:
         na = float(food.get("sodium_mg") or 0.0)
         sg = float(food.get("sugar_g") or 0.0)
+        fib = float(food.get("fiber_g") or 0.0)
         grp = str(food.get("food_group") or "").strip().lower()
         is_condiment_trap = 1 if (grp == "mon_che_bien_gia_vi" or na > 500.0) else 0
         is_sugary_trap = 1 if ((grp == "do_uong" and sg > 5.0) or sg > 15.0) else 0
-        return (is_condiment_trap, is_sugary_trap, 1 if sg > 10.0 else 0, na, int(food["id"]))
+        na_bucket = int(na // 25.0)
+        return (
+            is_condiment_trap,
+            is_sugary_trap,
+            1 if sg > 10.0 else 0,
+            na_bucket,
+            -min(fib, 12.0),
+            na,
+            int(food["id"]),
+        )
 
     for b_items in buckets.values():
         b_items.sort(key=_clean_rank)
@@ -218,7 +232,7 @@ def _curate_foods_for_alibaba(
 
 
 def format_allowed_foods_compact_alibaba(allowed_foods: list[dict[str, Any]]) -> str:
-    """Rút gọn tối đa 56 món đại diện gọn token cho Alibaba (10 cột dinh dưỡng trên 100g)."""
+    """Rút gọn tối đa 56 món đại diện gọn token cho Alibaba (11 cột dinh dưỡng trên 100g)."""
     if not allowed_foods:
         return "Không có món hợp lệ."
     sampled = _curate_foods_for_alibaba(allowed_foods, limit=56)
@@ -231,12 +245,13 @@ def format_allowed_foods_compact_alibaba(allowed_foods: list[dict[str, Any]]) ->
         p_str = _fmt_compact_num(food.get("protein_g"), decimals=1)
         f_str = _fmt_compact_num(food.get("fat_g"), decimals=1)
         c_str = _fmt_compact_num(food.get("carb_g"), decimals=1)
+        fib_str = _fmt_compact_num(food.get("fiber_g"), decimals=1)
         sugar_str = _fmt_compact_num(food.get("sugar_g"), decimals=1)
         na_str = _fmt_compact_num(food.get("sodium_mg"), decimals=0)
         purine = str(food.get("purine_level", "low")).strip() or "low"
         lines.append(
             f"{fid}|{name_vi}|{group}|{kcal_str}|{p_str}|{f_str}|{c_str}|"
-            f"{sugar_str}|{na_str}|{purine}"
+            f"{fib_str}|{sugar_str}|{na_str}|{purine}"
         )
     return "\n".join(lines)
 
@@ -273,6 +288,7 @@ def format_menu_summary(
                 f"(Đạm {float(d.get('protein_g', 0.0)):.1f}g, "
                 f"Béo {float(d.get('fat_g', 0.0)):.1f}g, "
                 f"Carb {float(d.get('carb_g', 0.0)):.1f}g, "
+                f"Xơ {float(d.get('fiber_g', 0.0)):.1f}g, "
                 f"Natri {float(d.get('sodium_mg', 0.0)):.0f}mg)"
             )
     if plan_llm and plan_llm.days:
@@ -353,6 +369,7 @@ def _build_alibaba_macro_guide(
     v_cfg = cfg["verifier"]
     kcal_tol = float(v_cfg["kcal_tolerance_pct"]) / 100.0
     macro_tol = float(v_cfg["macro_tolerance_pct"]) / 100.0
+    fiber_tol = float(v_cfg.get("fiber_tolerance_pct", v_cfg["macro_tolerance_pct"])) / 100.0
     grams_min = float(v_cfg["grams_min"])
     grams_max = float(v_cfg["grams_max"])
 
@@ -367,6 +384,7 @@ def _build_alibaba_macro_guide(
     f_high = targets.fat_g * (1.0 + macro_tol)
     c_low = targets.carb_g * (1.0 - macro_tol)
     c_high = targets.carb_g * (1.0 + macro_tol)
+    fiber_floor = targets.fiber_min_g * (1.0 - fiber_tol)
 
     sugar_note = (
         f"; đường <= {targets.sugar_max_g:.0f}g"
@@ -380,7 +398,9 @@ def _build_alibaba_macro_guide(
             f"- Năng lượng: {kcal_low:.0f}-{kcal_high:.0f} kcal "
             f"(tuyệt đối >= {targets.kcal_floor:.0f}); "
             f"Đạm: {p_low:.0f}-{p_high:.0f}g; Béo: {f_low:.0f}-{f_high:.0f}g; "
-            f"Carb: {c_low:.0f}-{c_high:.0f}g{sugar_note}; "
+            f"Carb: {c_low:.0f}-{c_high:.0f}g; "
+            f"Chất xơ >= {targets.fiber_min_g:.0f}g "
+            f"(ngưỡng đạt >= {fiber_floor:.1f}g){sugar_note}; "
             f"Natri <= {targets.sodium_max_mg:.0f}mg; "
             f"mỗi món {grams_min:.0f}-{grams_max:.0f}g."
         ),
@@ -389,21 +409,23 @@ def _build_alibaba_macro_guide(
             "Cộng nhẩm tổng ngày trước khi xuất JSON."
         ),
         (
-            "- Cách chia khẩu phần cân macro: ngũ cốc đã góp 2-9g đạm/100g nên tổng thịt/cá/trứng "
+            "- Cách chia khẩu phần cân macro & xơ: ngũ cốc góp 2-9g đạm/100g nên thịt/cá/trứng "
             f"chỉ lấy vừa đủ để Đạm <= {p_high:.0f}g; nhóm dau_mo_hat (dầu 100g béo/100g) chỉ dùng "
             f"{grams_min:.0f}-{oil_max:.0f}g/ngày hoặc bỏ qua nếu thịt/cá/hạt đã đủ béo "
-            f"để Béo <= {f_high:.0f}g; chia đủ cơm/bún/phở/khoai/yến mạch/trái cây "
-            f"vào 3 bữa để Carb >= {c_low:.0f}g."
+            f"để Béo <= {f_high:.0f}g; ưu tiên yến mạch/gạo lứt/khoai lang, rau xanh, đậu/hạt "
+            f"(hạt chia/đậu xanh/ổi) để vừa đạt Carb >= {c_low:.0f}g "
+            f"vừa đạt Chất xơ >= {fiber_floor:.1f}g."
         ),
     ]
     if violations and any(
-        v.code in ("MACRO_OUT_OF_RANGE", "BELOW_FLOOR", "KCAL_OUT_OF_RANGE")
+        v.code in ("MACRO_OUT_OF_RANGE", "BELOW_FLOOR", "KCAL_OUT_OF_RANGE", "FIBER_LOW")
         for v in violations
     ):
         lines.append(
             "- SỬA VI PHẠM LẦN TRƯỚC: Điều chỉnh trực tiếp grams đúng chiều lỗi "
             "(thừa Đạm -> giảm thịt/cá/trứng; thừa Béo -> giảm/bỏ dầu ăn và món nhiều mỡ; "
-            "thiếu Carb hoặc dưới sàn kcal -> tăng cơm/bún/khoai/yến mạch)."
+            "thiếu Carb hoặc dưới sàn kcal -> tăng cơm/bún/khoai/yến mạch; thiếu Chất xơ "
+            "[FIBER_LOW] -> tăng rau củ, đậu hạt, hạt chia, yến mạch hoặc ổi/bơ)."
         )
     return "\n".join(lines)
 
@@ -441,6 +463,7 @@ def build_planner_prompt(
             "protein_g": f"{targets.protein_g:.1f}",
             "fat_g": f"{targets.fat_g:.1f}",
             "carb_g": f"{targets.carb_g:.1f}",
+            "fiber_min_g": f"{targets.fiber_min_g:.1f}",
             "sodium_max_mg": f"{targets.sodium_max_mg:.0f}",
             "needs": needs_str,
             "allergens": allergens_str,
@@ -451,15 +474,15 @@ def build_planner_prompt(
     )
     if norm_provider == "alibaba":
         rendered = rendered.replace(
-            "(id|tên|kcal/100g|nhóm|tags)",
-            "(trên 100g: id|tên|nhóm|kcal|đạm_g|béo_g|carb_g|đường_g|natri_mg|purin)",
+            "(id|tên|kcal/100g|nhóm|tags|xơ_g)",
+            "(trên 100g: id|tên|nhóm|kcal|đạm_g|béo_g|carb_g|xơ_g|đường_g|natri_mg|purin)",
         )
         rendered += _build_alibaba_macro_guide(targets, violations=violations)
         rendered += ALIBABA_PLANNER_SCHEMA_INSTRUCTION
     elif norm_provider == "groq":
         rendered = rendered.replace(
-            "(id|tên|kcal/100g|nhóm|tags)",
-            "(trên 100g: id|mã|tên|nhóm|đơn_vị_g|kcal|đạm_g|béo_g|carb_g|natri_mg|purin|tags)",
+            "(id|tên|kcal/100g|nhóm|tags|xơ_g)",
+            "(trên 100g: id|mã|tên|nhóm|đơn_vị_g|kcal|đạm_g|béo_g|carb_g|xơ_g|natri_mg|purin|tags)",
         )
         rendered += GROQ_PLANNER_SCHEMA_INSTRUCTION
     return rendered
