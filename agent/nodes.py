@@ -234,9 +234,20 @@ def _persist_meal_plan(
     status = status_override or state.get("status", "draft")
     targets = state.get("targets")
     needs = state.get("needs")
+    risk = state.get("risk")
+    snippets = state.get("snippets") or []
     explanation_md = state.get("explanation_md", "")
     retry_count = int(state.get("retry_count", 0))
     violations = state.get("violations", [])
+    risk_json = risk.model_dump_json() if risk else "{}"
+    snippets_json = json.dumps(
+        [s.model_dump() if hasattr(s, "model_dump") else dict(s) for s in snippets],
+        ensure_ascii=False,
+    )
+    violations_json = json.dumps(
+        [v.model_dump() if hasattr(v, "model_dump") else dict(v) for v in violations],
+        ensure_ascii=False,
+    )
     passed_first_try = retry_count == 0 and not violations and status in (
         "pending_review",
         "approved",
@@ -266,8 +277,9 @@ def _persist_meal_plan(
                     f"thread_id={thread_id!r} (meal_plan_id={existing.id}) đã ở trạng thái "
                     f"{existing.status!r}, không thể ghi đè."
                 )
-            hp = _get_or_create_health_profile(session, profile)
-            if existing.profile_id != hp.id:
+            if _health_profile_matches(session, existing_hp, profile):
+                hp = existing_hp
+            else:
                 raise ValueError(
                     f"thread_id={thread_id!r} (meal_plan_id={existing.id}) không khớp hồ sơ "
                     "đã lưu trước đó, từ chối ghi đè."
@@ -279,6 +291,9 @@ def _persist_meal_plan(
                 explanation_md=explanation_md,
                 retry_count=retry_count,
                 verifier_passed_first_try=passed_first_try,
+                risk_json=risk_json,
+                snippets_json=snippets_json,
+                violations_json=violations_json,
             )
             assert plan_row is not None
             plan_llm = state.get("plan_llm")
@@ -293,6 +308,9 @@ def _persist_meal_plan(
                 status=status,
                 targets_json=targets.model_dump_json() if targets else "{}",
                 needs_json=needs.model_dump_json() if needs else "{}",
+                risk_json=risk_json,
+                snippets_json=snippets_json,
+                violations_json=violations_json,
                 explanation_md=explanation_md,
                 retry_count=retry_count,
                 verifier_passed_first_try=passed_first_try,
@@ -313,30 +331,41 @@ def _apply_edited_items(
     if not edited_items:
         return plan.model_copy(deep=True)
 
-    # Nếu edited_items có đầy đủ cấu trúc day + meal + food_id + grams
+    # Nếu edited_items có đầy đủ cấu trúc day + meal + food_id: thay thế toàn bộ danh sách món
     if all("day" in it and "meal" in it and "food_id" in it for it in edited_items):
         by_day_meal: dict[tuple[int, str], list[PlannedItem]] = {}
+        extra_meals_by_day: dict[int, list[str]] = {}
         for it in edited_items:
+            day_num = int(it["day"])
+            meal_name = str(it["meal"])
+            if meal_name not in extra_meals_by_day.setdefault(day_num, []):
+                extra_meals_by_day[day_num].append(meal_name)
             grams = float(it.get("grams", 0.0))
             if grams <= 0:
                 continue
-            key = (int(it["day"]), str(it["meal"]))
+            key = (day_num, meal_name)
             by_day_meal.setdefault(key, []).append(
                 PlannedItem.model_construct(food_id=int(it["food_id"]), grams=grams)
             )
 
+        existing_days = {dp.day: dp for dp in plan.days}
+        ordered_days = [dp.day for dp in plan.days]
+        for day_num in sorted(extra_meals_by_day):
+            if day_num not in existing_days:
+                ordered_days.append(day_num)
+
         new_days: list[DayPlan] = []
-        for day_plan in plan.days:
-            new_meals: list[Meal] = []
-            for meal in day_plan.meals:
-                key = (day_plan.day, meal.meal)
-                if key in by_day_meal:
-                    new_meals.append(
-                        Meal.model_construct(meal=meal.meal, items=by_day_meal[key])
-                    )
-                else:
-                    new_meals.append(meal.model_copy(deep=True))
-            new_days.append(DayPlan.model_construct(day=day_plan.day, meals=new_meals))
+        for day_num in ordered_days:
+            dp = existing_days.get(day_num)
+            meal_names: list[str] = [m.meal for m in dp.meals] if dp else []
+            for m_name in extra_meals_by_day.get(day_num, []):
+                if m_name not in meal_names:
+                    meal_names.append(m_name)
+            new_meals = [
+                Meal.model_construct(meal=m_name, items=by_day_meal.get((day_num, m_name), []))
+                for m_name in meal_names
+            ]
+            new_days.append(DayPlan.model_construct(day=day_num, meals=new_meals))
         return MealPlanLLM.model_construct(days=new_days, cannot_plan=False, reason="")
 
     # Nếu edited_items chỉ truyền {food_id, grams} để cập nhật khối lượng món tương ứng
@@ -552,7 +581,7 @@ def plan(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
     assert targets is not None and needs is not None
 
     cfg = load_rules()
-    exclude_tags: list[str] = []
+    exclude_tags: list[str] = ["nguyen_lieu_song"]
     max_purine_level: str | None = None
     for need_name in needs.needs:
         need_cfg = cfg["needs"].get(need_name, {})
@@ -870,28 +899,38 @@ def await_review(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
         raw_edited = review_dict.get("edited_items")
         if raw_edited is not None and not isinstance(raw_edited, list):
             raise ValueError("Trường edited_items phải là danh sách khi decision='edit'.")
-        edited_items = list(raw_edited or [])
-        if plan_llm is not None and targets is not None:
-            plan_llm = _apply_edited_items(plan_llm, edited_items)
-            updated_violations, updated_scored = verify_meal_plan(
-                plan=plan_llm,
-                profile=profile,
-                targets=targets,
-                gateway=gateway,
-                needs=state.get("needs"),
-                allowed_foods=state.get("allowed_foods"),
-            )
-            if updated_violations:
-                new_status = "needs_human_review"
-                trace_notes.append("await_review: bản sửa của chuyên gia còn vi phạm verifier")
-            else:
-                new_status = "approved"
-                trace_notes.append("await_review: chuyên gia sửa và đạt verifier -> approved")
-        else:
+        if raw_edited is not None and len(raw_edited) == 0:
             new_status = "needs_human_review"
-            trace_notes.append(
-                "await_review: thiếu thực đơn/mục tiêu để kiểm chứng bản sửa -> needs_human_review"
-            )
+            trace_notes.append("await_review: danh sách món sau sửa rỗng -> needs_human_review")
+        else:
+            edited_items = list(raw_edited or [])
+            if plan_llm is not None and targets is not None:
+                plan_llm = _apply_edited_items(plan_llm, edited_items)
+                has_positive_items = any(
+                    it.grams > 0 for d in plan_llm.days for m in d.meals for it in m.items
+                )
+                updated_violations, updated_scored = verify_meal_plan(
+                    plan=plan_llm,
+                    profile=profile,
+                    targets=targets,
+                    gateway=gateway,
+                    needs=state.get("needs"),
+                    allowed_foods=state.get("allowed_foods"),
+                )
+                if updated_violations or not has_positive_items:
+                    new_status = "needs_human_review"
+                    trace_notes.append(
+                        "await_review: bản sửa của chuyên gia rỗng hoặc còn vi phạm verifier"
+                    )
+                else:
+                    new_status = "approved"
+                    trace_notes.append("await_review: chuyên gia sửa và đạt verifier -> approved")
+            else:
+                new_status = "needs_human_review"
+                trace_notes.append(
+                    "await_review: thiếu thực đơn/mục tiêu để kiểm chứng bản sửa -> "
+                    "needs_human_review"
+                )
     elif decision == "approve":
         new_status = "approved"
         trace_notes.append("await_review: chuyên gia duyệt -> approved")

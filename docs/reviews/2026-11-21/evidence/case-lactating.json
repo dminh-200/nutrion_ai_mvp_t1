@@ -1,0 +1,45 @@
+{
+  "status": "redirect_to_doctor",
+  "meal_plan_id": 661,
+  "thread_id": "thread-ca96ce497214",
+  "session_id": "sess-9559fd48d89b",
+  "trace_id": "16a1407b7c2f72a4f08273b374638390",
+  "retry_count": 0,
+  "input_flags": [
+    "RISK_LACT"
+  ],
+  "output_flags": [],
+  "risk": {
+    "high_risk": true,
+    "reasons": [
+      "RISK_LACT"
+    ],
+    "message_vi": "Giai đoạn cho con bú cần được tư vấn trực tiếp."
+  },
+  "targets": null,
+  "needs": null,
+  "items": [],
+  "daily_totals": [],
+  "violations": [],
+  "snippets": [],
+  "explanation_md": "**Khuyến nghị thăm khám trực tiếp:** Giai đoạn cho con bú cần được tư vấn trực tiếp.\n\n---\n*Lưu ý: Thực đơn chỉ mang tính tham khảo hỗ trợ dinh dưỡng, không thay thế chẩn đoán hoặc chỉ định điều trị của bác sĩ.*",
+  "metrics": {
+    "llm_calls": 0,
+    "tokens_in": 0,
+    "tokens_out": 0,
+    "latency_ms": 67.32,
+    "model_usage": {},
+    "est_cost_usd": 0.0,
+    "est_cost_if_paid_usd": 0.0
+  },
+  "execution": {
+    "api_attempts": 0,
+    "cache_hits": 0,
+    "mock_calls": 0
+  },
+  "trace_notes": [
+    "intake: nhận hồ sơ QA_DEMO_lactating",
+    "input_guardrail: chuyển hướng bác sĩ (RISK_LACT)",
+    "finalize: hoàn tất với status=redirect_to_doctor, meal_plan_id=661"
+  ]
+}

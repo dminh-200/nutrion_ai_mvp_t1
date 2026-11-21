@@ -143,14 +143,21 @@ def test_load_sample_patients() -> None:
     assert "allergens" in p1
 
 
-def test_get_system_warnings() -> None:
+def test_get_system_warnings(tmp_path: Path) -> None:
     """Kiểm tra phát hiện cảnh báo TODO_VERIFY và cấu hình LLM."""
-    warnings_data = get_system_warnings()
-    assert "has_warnings" in warnings_data
-    assert "todo_verify_items" in warnings_data
-    assert "todo_verify_count" in warnings_data
-    assert warnings_data["todo_verify_count"] >= 1
-    assert any("TODO_VERIFY" in w for w in warnings_data["warnings"])
+    db_file = tmp_path / "warnings_test.db"
+    engine = create_db_engine(f"sqlite:///{db_file}")
+    ensure_db_ready(engine)
+    try:
+        with Session(engine) as sess:
+            warnings_data = get_system_warnings(session=sess)
+        assert "has_warnings" in warnings_data
+        assert "todo_verify_items" in warnings_data
+        assert "todo_verify_count" in warnings_data
+        assert warnings_data["todo_verify_count"] >= 1
+        assert any("TODO_VERIFY" in w for w in warnings_data["warnings"])
+    finally:
+        engine.dispose()
 
 
 def test_list_and_detail_meal_plans(tmp_path: Path) -> None:
@@ -248,6 +255,15 @@ def test_record_review_for_finalized_plan(tmp_path: Path) -> None:
         plan_id = plan.id
 
     with Session(engine) as sess:
+        # Không thể duyệt một ca rỗng dù chuyên gia nhấn phê duyệt.
+        with pytest.raises(ValueError, match="chưa có món ăn"):
+            record_review_for_finalized_plan(
+                meal_plan_id=plan_id,
+                reviewer_name="BS. Hùng",
+                decision="approve",
+                session=sess,
+            )
+
         # Quyết định từ chối bắt buộc có note
         with pytest.raises(ValueError, match="bắt buộc phải có lý do"):
             record_review_for_finalized_plan(
@@ -268,15 +284,15 @@ def test_record_review_for_finalized_plan(tmp_path: Path) -> None:
         )
         assert res_rej["status"] == "rejected"
 
-        # Phê duyệt hợp lệ
-        res_app = record_review_for_finalized_plan(
-            meal_plan_id=plan_id,
-            reviewer_name="BS. Hùng",
-            decision="approve",
-            note="Đã kiểm tra và phê duyệt.",
-            session=sess,
-        )
-        assert res_app["status"] == "approved"
+        # Ca rỗng hoặc đã từ chối không thể trở thành thực đơn được duyệt.
+        with pytest.raises(ValueError):
+            record_review_for_finalized_plan(
+                meal_plan_id=plan_id,
+                reviewer_name="BS. Hùng",
+                decision="approve",
+                note="Đã kiểm tra và phê duyệt.",
+                session=sess,
+            )
 
         # Kiểm tra bảng Review
         rev_stmt = (
@@ -285,7 +301,7 @@ def test_record_review_for_finalized_plan(tmp_path: Path) -> None:
             .where(Review.meal_plan_id == plan_id)
         )
         rev_count = sess.scalar(rev_stmt)
-        assert rev_count == 2
+        assert rev_count == 1
 
 
 def test_preview_and_verify_edited_items(tmp_path: Path) -> None:
@@ -408,6 +424,10 @@ def test_get_dashboard_dataset(tmp_path: Path) -> None:
         assert "condition_distribution" in charts
         assert "guardrails_by_type" in charts
         assert "latency_distribution" in charts
+
+        # Đếm theo bệnh lý không được vượt quá tổng request (tránh nhân bản qua nhiều HealthProfile)
+        cond_values = charts["condition_distribution"]["values"]
+        assert all(v <= kpis["total_requests"] for v in cond_values)
 
         assert len(data["csv_data"]) > 100
         assert "session_id" in data["csv_data"]

@@ -1,0 +1,43 @@
+F841 Local variable `oil_max` is assigned to but never used
+   --> agent\prompts.py:394:5
+    |
+392 |         else ""
+393 |     )
+394 |     oil_max = max(grams_min, 15.0)
+    |     ^^^^^^^
+395 |     lines = [
+396 |         "\n\nNGƯỠNG ĐẠT MỖI NGÀY (BẮT BUỘC):",
+    |
+help: Remove assignment to unused variable `oil_max`
+    |
+393 |     )
+    -     oil_max = max(grams_min, 15.0)
+394 +     max(grams_min, 15.0)
+395 |     lines = [
+    |
+note: This is an unsafe fix and may change runtime behavior
+
+E501 Line too long (101 > 100)
+   --> agent\prompts.py:413:101
+    |
+411 |         (
+412 |             "- Cách chia khẩu phần cân macro, xơ & thực tế bữa ăn: mỗi bữa chính (breakfast/lunch/"
+413 |             "dinner) phân bổ 25–40% kcal ngày (không dồn >48% vào 1 bữa); thịt/cá chính >= 50g/bữa; "
+    |                                                                                                     ^
+414 |             "hạt chia/hạt khô tối đa 20–30g/ngày; nhóm dầu ăn tối đa 10–15g/bữa; ưu tiên đa dạng "
+415 |             "món khác nhau giữa các ngày (không lặp chu kỳ giống hệt nhau) và tôn trọng cách chế "
+    |
+
+E501 Line too long (118 > 100)
+   --> app\pages\2_Ket_qua.py:201:101
+    |
+199 |     st.info(
+200 |         "⏳ Thực đơn đang chờ chuyên gia dinh dưỡng thẩm định và phê duyệt. "
+201 |         "Chi tiết món ăn sẽ hiển thị sau khi được duyệt (hoặc chuyển vai trò sang Chuyên gia ở sidebar để xem trước)."
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+202 |     )
+203 |     render_disclaimer()
+    |
+
+Found 3 errors.
+1 unsafe fix available with `--fix --unsafe-fixes`.

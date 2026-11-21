@@ -162,3 +162,48 @@ def test_import_food_csv_checks_duplicate_negative_and_kcal_warning(tmp_path: Pa
     assert "4P+9F+4C" in report["warnings"][0]
     assert any("trùng code" in e for e in report["errors"])
     assert any("âm" in e for e in report["errors"])
+
+
+def test_search_food_hides_sample_when_real_exists_and_excludes_raw() -> None:
+    """Ẩn SAMPLE_DATA khi có dữ liệu thật và get_allowed_foods bỏ qua nguyen_lieu_song."""
+    mixed_db = [
+        {
+            "id": 1,
+            "name_vi": "Hạt chia mẫu",
+            "name_ascii": "hat chia mau",
+            "food_group": "dau_hat",
+            "kcal": 486.0,
+            "tags": "",
+            "allergen_tags": "",
+            "purine_level": "low",
+            "source": "SAMPLE_DATA",
+        },
+        {
+            "id": 2,
+            "name_vi": "Ức gà sống bỏ da",
+            "name_ascii": "uc ga song bo da",
+            "food_group": "thit_gia_cam",
+            "kcal": 103.2,
+            "tags": "dam_nac|nguyen_lieu_song",
+            "allergen_tags": "",
+            "purine_level": "medium",
+            "source": "Viện Dinh dưỡng",
+        },
+        {
+            "id": 3,
+            "name_vi": "Ức gà bỏ da luộc/hấp",
+            "name_ascii": "uc ga bo da luoc hap",
+            "food_group": "thit_gia_cam",
+            "kcal": 141.4,
+            "tags": "dam_nac",
+            "allergen_tags": "",
+            "purine_level": "medium",
+            "source": "Viện Dinh dưỡng",
+        },
+    ]
+    found = search_food(query="", food_db=mixed_db)
+    assert all("SAMPLE_DATA" not in str(f.get("source", "")) for f in found)
+
+    needs = NeedsResult(needs=["duy_tri_can_bang"], rule_refs=["NEED_DEFAULT"])
+    allowed = get_allowed_foods(needs, food_db=mixed_db)
+    assert [f["id"] for f in allowed] == [3]

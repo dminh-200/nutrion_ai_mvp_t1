@@ -1,0 +1,45 @@
+{
+  "status": "redirect_to_doctor",
+  "meal_plan_id": 663,
+  "thread_id": "thread-34c98581fe8d",
+  "session_id": "sess-d12ef6352fef",
+  "trace_id": "a79696182e99f0730905b431eb3a6ad4",
+  "retry_count": 0,
+  "input_flags": [
+    "RISK_CKD"
+  ],
+  "output_flags": [],
+  "risk": {
+    "high_risk": true,
+    "reasons": [
+      "RISK_CKD"
+    ],
+    "message_vi": "Bệnh thận giai đoạn muộn cần chế độ ăn do bác sĩ chỉ định."
+  },
+  "targets": null,
+  "needs": null,
+  "items": [],
+  "daily_totals": [],
+  "violations": [],
+  "snippets": [],
+  "explanation_md": "**Khuyến nghị thăm khám trực tiếp:** Bệnh thận giai đoạn muộn cần chế độ ăn do bác sĩ chỉ định.\n\n---\n*Lưu ý: Thực đơn chỉ mang tính tham khảo hỗ trợ dinh dưỡng, không thay thế chẩn đoán hoặc chỉ định điều trị của bác sĩ.*",
+  "metrics": {
+    "llm_calls": 0,
+    "tokens_in": 0,
+    "tokens_out": 0,
+    "latency_ms": 63.88,
+    "model_usage": {},
+    "est_cost_usd": 0.0,
+    "est_cost_if_paid_usd": 0.0
+  },
+  "execution": {
+    "api_attempts": 0,
+    "cache_hits": 0,
+    "mock_calls": 0
+  },
+  "trace_notes": [
+    "intake: nhận hồ sơ QA_DEMO_ckd4",
+    "input_guardrail: chuyển hướng bác sĩ (RISK_CKD)",
+    "finalize: hoàn tất với status=redirect_to_doctor, meal_plan_id=663"
+  ]
+}

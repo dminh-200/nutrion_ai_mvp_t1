@@ -667,3 +667,62 @@ def test_mock_planner_and_portion_meet_fiber_on_real_food_csv_t2d_gout() -> None
             food_db=allowed,
         )
     assert {v.code for v in viols} == set()
+
+
+def test_verifier_catches_unrealistic_portion_imbalance_and_duplicate_days() -> None:
+    """Verifier bắt được định lượng phi thực tế, mất cân đối bữa và lặp nguyên ngày."""
+    rich_db: list[dict[str, Any]] = [
+        {
+            "id": i,
+            "name_vi": f"Món {i}",
+            "food_group": (
+                "rau_cu"
+                if i > 3
+                else ("dau_mo_hat" if i == 3 else ("thit_gia_cam" if i == 2 else "ngu_coc"))
+            ),
+            "unit_default_g": 15.0 if i == 3 else 120.0,
+            "kcal": 510.0 if i == 3 else (140.0 if i == 2 else (120.0 if i == 1 else 30.0)),
+            "protein_g": 16.0 if i == 3 else (28.0 if i == 2 else 3.0),
+            "fat_g": 30.0 if i == 3 else 2.0,
+            "carb_g": 40.0 if i == 3 else (25.0 if i == 1 else 3.0),
+            "fiber_g": 2.0,
+            "sugar_g": 0.5,
+            "sodium_mg": 30.0,
+            "purine_level": "low",
+            "allergen_tags": "",
+            "tags": "",
+        }
+        for i in range(1, 16)
+    ]
+    day1 = DayPlan(
+        day=1,
+        meals=[
+            Meal(
+                meal="breakfast",
+                items=[PlannedItem(food_id=1, grams=100.0), PlannedItem(food_id=2, grams=15.0)],
+            ),
+            Meal(
+                meal="lunch",
+                items=[PlannedItem(food_id=1, grams=200.0), PlannedItem(food_id=3, grams=105.0)],
+            ),
+            Meal(
+                meal="dinner",
+                items=[PlannedItem(food_id=1, grams=100.0), PlannedItem(food_id=4, grams=150.0)],
+            ),
+        ],
+    )
+    day2 = DayPlan(day=2, meals=day1.meals)
+    profile = _base_profile(days=2)
+    with ToolsGateway(mode="direct") as gw:
+        viols, _ = verify_meal_plan(
+            plan=MealPlanLLM(days=[day1, day2]),
+            profile=profile,
+            targets=_base_targets(),
+            gateway=gw,
+            allowed_foods=rich_db,
+            food_db=rich_db,
+        )
+    codes = {v.code for v in viols}
+    assert "PORTION_UNREALISTIC" in codes
+    assert "MEAL_IMBALANCE" in codes
+    assert "DAY_DUPLICATE" in codes

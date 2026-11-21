@@ -26,6 +26,9 @@ class Settings(BaseSettings):
         "https://ws-rkodq3wgmou33rdz.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
     )
     ALIBABA_MODEL: str = "qwen3.8-flash"
+    ALIBABA_CHAT_API_KEY: str = ""
+    ALIBABA_CHAT_BASE_URL: str = ""
+    ALIBABA_CHAT_MODEL: str = ""
     LLM_MODE: Literal["real", "mock"] = "mock"
     LLM_MAX_RPM: int = 8
     LLM_CACHE_DIR: str = ".cache/llm"
@@ -47,6 +50,18 @@ class Settings(BaseSettings):
     def langfuse_enabled(self) -> bool:
         """Bật Langfuse tracing khi có đủ public và secret key."""
         return bool(self.LANGFUSE_PUBLIC_KEY.strip() and self.LANGFUSE_SECRET_KEY.strip())
+
+    @property
+    def chat_uses_dedicated_key(self) -> bool:
+        """Trả về True nếu Chatbot đang cấu hình ALIBABA_CHAT_API_KEY riêng."""
+        return bool(self.ALIBABA_CHAT_API_KEY.strip())
+
+    def resolve_chat_alibaba_config(self) -> tuple[str, str, str]:
+        """Trả về (api_key, model, base_url) cho Chatbot, tự fallback về cấu hình Alibaba chính."""
+        api_key = self.ALIBABA_CHAT_API_KEY.strip() or self.ALIBABA_API_KEY.strip()
+        model = self.ALIBABA_CHAT_MODEL.strip() or self.ALIBABA_MODEL.strip()
+        base_url = self.ALIBABA_CHAT_BASE_URL.strip() or self.ALIBABA_BASE_URL.strip()
+        return api_key, model, base_url
 
     def validate_llm_config(self) -> tuple[bool, str | None]:
         """Kiểm tra cấu hình LLM; trả về (hợp_lệ, thông_báo_lỗi_nếu_có)."""

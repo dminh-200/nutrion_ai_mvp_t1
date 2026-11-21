@@ -1,0 +1,23 @@
+
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]
+Loading weights:  10%|9         | 19/199 [00:00<00:01, 167.00it/s]
+Loading weights: 100%|##########| 199/199 [00:00<00:00, 1124.96it/s]
+{
+  "mode": "mock/direct",
+  "isolated_db": "C:\\Users\\Admin\\AppData\\Local\\Temp\\nutriai-review-8qp3u6cx",
+  "checks": {},
+  "precondition_failed": {
+    "expected": "pending_review",
+    "actual": "needs_human_review",
+    "violations": [
+      {
+        "code": "MACRO_OUT_OF_RANGE",
+        "message_vi": "Ng\u00e0y 1: B\u00e9o \u0111\u1ea1t 48.5g (thi\u1ebfu 44.4g, l\u1ec7ch 47.8% so v\u1edbi m\u1ee5c ti\u00eau 92.9g, ng\u01b0\u1ee1ng \u00b115%).",
+        "day": 1,
+        "meal": null,
+        "food_id": null
+      }
+    ],
+    "note": "Ngu\u1ed3n hi\u1ec7n t\u1ea1i ch\u01b0a t\u1ea1o \u0111\u01b0\u1ee3c mock menu h\u1ee3p l\u1ec7; kh\u00f4ng ch\u1ea1y chu\u1ed7i duy\u1ec7t."
+  }
+}

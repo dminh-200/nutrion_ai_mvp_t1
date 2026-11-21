@@ -1,0 +1,49 @@
+:host { color-scheme: dark; }
+.nutri-side-provider {
+  width: 100%;
+  min-height: 0;
+  font: 400 14px/1.5 "Be Vietnam Pro", "Segoe UI", sans-serif;
+}
+.nutri-side {
+  width: 100%;
+  min-height: max(470px, calc(100svh - 89px));
+  color: #eaf5eb;
+  background: transparent;
+}
+.nutri-side-header, .nutri-side-role, .nutri-side-nav, .nutri-side-footer { padding-inline: 0; }
+.nutri-side-header { padding-block: 0 29px; gap: 15px; }
+.nutri-side-brand { display: flex; align-items: center; gap: 11px; }
+.nutri-side-brand > span {
+  width: 43px; height: 43px; display: grid; place-items: center; flex: none;
+  border-radius: 14px; color: #182e23; background: #d6ebaa;
+}
+.nutri-side-brand svg { width: 22px; height: 22px; }
+.nutri-side-brand strong { font-size: 21px; line-height: 1.17; display: block; font-weight: 800; letter-spacing: -.045em; }
+.nutri-side-brand small { font-size: 11px; color: #bfd1c3; display: block; white-space: nowrap; }
+.nutri-side .nutri-side-demo { padding: 3px 9px; color: #d9ebd8; background: #2b4838; border-color: #43624e; font-size: 11px; }
+.nutri-side [data-slot=sidebar-group-label] { padding-left: 7px; color: #b5c9b9; font-size: 11px; }
+.nutri-side [data-slot=sidebar-menu] { gap: 5px; }
+.nutri-side .nutri-side-link { height: 39px; gap: 9px; padding-inline: 10px; border-radius: 9px; }
+.nutri-side .nutri-side-link[data-active=true] { background: #d7e9c5; color: #233d2c; font-weight: 800; }
+.nutri-side-chevron { margin-left: auto; opacity: .45; }
+.nutri-side .nutri-side-rule { margin: 12px 0; width: 100%; background: #3c5347; }
+.nutri-side-role { gap: 7px; color: #d5e3d7; }
+.nutri-side-role label { font-size: 12px; font-weight: 600; }
+.nutri-side-role [data-slot=native-select-wrapper] { width: 100%; }
+.nutri-side-role select { background: #1c352b; border-color: #537061; color: #f0f7ee; }
+.nutri-side-role [data-slot=native-select-icon] { color: #e2ece2; }
+.nutri-side-footer { margin-top: auto; padding-top: 24px; }
+.nutri-side-footer details { border: 1px solid #476254; border-radius: 12px; background: #203b30; }
+.nutri-side-footer summary {
+  display: flex; align-items: center; gap: 8px; padding: 11px 9px; cursor: pointer;
+  color: #ecdfb8; font-size: 11px; font-weight: 600; list-style: none;
+}
+.nutri-side-footer summary::-webkit-details-marker { display: none; }
+.nutri-side-footer summary svg { width: 15px; height: 15px; flex: none; }
+.nutri-side-footer summary svg:last-child { margin-left: auto; transition: transform .18s; }
+.nutri-side-footer details[open] summary svg:last-child { transform: rotate(90deg); }
+.nutri-side-footer summary small { display: block; }
+.nutri-side-footer p, .nutri-side-footer ul { margin: 0; padding: 0 9px 8px; color: #d5e5d6; font-size: 11px; }
+.nutri-side-footer ul { overflow-wrap: anywhere; }
+.nutri-side :is(button, select, summary):focus-visible { outline: 2px solid #cbe5b5; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .nutri-side * { transition: none !important; } }

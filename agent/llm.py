@@ -18,6 +18,8 @@ from google.genai import errors as genai_errors
 from google.genai import types
 from pydantic import ValidationError
 
+from observability.execution import record_execution
+
 try:
     import groq
     from groq import Groq
@@ -35,6 +37,7 @@ except ImportError:  # pragma: no cover
 from agent.prompts import build_explain_prompt, build_planner_prompt
 from config.settings import Settings, get_settings
 from core.nutrition import load_rules
+from core.portion import _item_grams_bounds
 from core.schemas import (
     DayPlan,
     DraftMenu,
@@ -455,6 +458,7 @@ def _call_with_retry(
     for attempt in retrying:
         with attempt:
             rate_limiter.acquire(max_rpm)
+            record_execution("api")
             return fn()
     raise RuntimeError("Không thể hoàn thành lời gọi API sau khi thử lại.")
 
@@ -487,27 +491,46 @@ def _select_balanced_mock_foods(
     safe_pool = [
         f
         for f in allowed_foods
-        if float(f.get("sodium_mg") or 0.0) <= 350.0 and float(f.get("sugar_g") or 0.0) <= 5.0
+        if float(f.get("sodium_mg") or 0.0) <= 350.0
+        and float(f.get("sugar_g") or 0.0) <= 2.5
+        and "nguyen_lieu_song" not in str(f.get("tags") or "")
     ]
-    if len(safe_pool) < 6:
+    if len(safe_pool) < 11:
+        safe_pool = [
+            f
+            for f in allowed_foods
+            if float(f.get("sodium_mg") or 0.0) <= 500.0
+            and float(f.get("sugar_g") or 0.0) <= 5.0
+            and "nguyen_lieu_song" not in str(f.get("tags") or "")
+        ]
+    if len(safe_pool) < 11:
         safe_pool = [
             f
             for f in allowed_foods
             if float(f.get("sodium_mg") or 0.0) <= 500.0
             and float(f.get("sugar_g") or 0.0) <= 15.0
+            and "nguyen_lieu_song" not in str(f.get("tags") or "")
         ]
-    pool = safe_pool if len(safe_pool) >= 6 else list(allowed_foods)
+    pool = safe_pool if len(safe_pool) >= 11 else list(allowed_foods)
 
     def _ratio(f: dict[str, Any], macro_key: str, cal_per_g: float) -> float:
         kcal = max(float(f.get("kcal") or 0.0), 10.0)
         return (float(f.get(macro_key) or 0.0) * cal_per_g) / kcal
 
-    # Ưu tiên nhóm tinh bột ít đường (ngũ cốc/khoai) làm nguồn carb chính
+    # Ưu tiên nhóm tinh bột chín mật độ vừa (cơm/bún/phở/khoai) làm nguồn carb chính
     staple_carbs = [
         f
         for f in pool
-        if float(f.get("carb_g") or 0.0) >= 15.0 and float(f.get("sugar_g") or 0.0) <= 5.0
+        if float(f.get("carb_g") or 0.0) >= 15.0
+        and float(f.get("sugar_g") or 0.0) <= 5.0
+        and 80.0 <= float(f.get("kcal") or 0.0) <= 220.0
     ]
+    if len(staple_carbs) < 3:
+        staple_carbs = [
+            f
+            for f in pool
+            if float(f.get("carb_g") or 0.0) >= 15.0 and float(f.get("sugar_g") or 0.0) <= 5.0
+        ]
     carb_source_pool = staple_carbs if len(staple_carbs) >= 2 else pool
     carb_cands = sorted(
         carb_source_pool,
@@ -524,6 +547,7 @@ def _select_balanced_mock_foods(
         if float(f.get("carb_g") or 0.0) >= 12.0
         and float(f.get("sugar_g") or 0.0) <= 5.0
         and float(f.get("fiber_g") or 0.0) >= 1.5
+        and 80.0 <= float(f.get("kcal") or 0.0) <= 220.0
     ] or carb_cands
     fiber_carb_cands = sorted(
         fiber_carb_pool,
@@ -534,19 +558,21 @@ def _select_balanced_mock_foods(
             int(f["id"]),
         ),
     )
+    prefer_moderate_fat_prot = targets.fat_g >= 55.0
     prot_cands = sorted(
-        pool,
-        key=lambda f: (-_ratio(f, "protein_g", 4.0), _safe_penalty(f), int(f["id"])),
-    )
-    fat_cands = sorted(
-        pool,
+        [
+            f
+            for f in pool
+            if f.get("food_group") in ("thit_gia_cam", "thuy_hai_san", "thit_ca", "trung_sua_dau")
+            and float(f.get("protein_g") or 0.0) >= 10.0
+        ]
+        or pool,
         key=lambda f: (
             -(
-                _ratio(f, "fat_g", 9.0)
-                + 0.2 * _ratio(f, "protein_g", 4.0)
+                _ratio(f, "protein_g", 4.0)
                 + (
-                    0.06 * min(float(f.get("fiber_g") or 0.0), 15.0)
-                    if targets.fiber_min_g > 0 and _ratio(f, "fat_g", 9.0) >= 0.35
+                    0.95 * min(float(f.get("fat_g") or 0.0), 15.0) / 15.0
+                    if prefer_moderate_fat_prot
                     else 0.0
                 )
             ),
@@ -554,10 +580,19 @@ def _select_balanced_mock_foods(
             int(f["id"]),
         ),
     )
-    veg_cands = sorted(
-        [f for f in pool if f.get("food_group") == "rau_cu"]
-        or [f for f in pool if f.get("food_group") in ("rau_cu", "trai_cay")]
+    fat_cands = sorted(
+        [f for f in pool if float(f.get("fat_g") or 0.0) >= 35.0]
+        or [f for f in pool if float(f.get("fat_g") or 0.0) >= 10.0]
         or pool,
+        key=lambda f: (
+            -(_ratio(f, "fat_g", 9.0)),
+            float(f.get("fiber_g") or 0.0),
+            _safe_penalty(f),
+            int(f["id"]),
+        ),
+    )
+    veg_cands = sorted(
+        [f for f in pool if f.get("food_group") == "rau_cu"] or pool,
         key=lambda f: (
             -float(f.get("fiber_g") or 0.0),
             _safe_penalty(f),
@@ -581,26 +616,36 @@ def _select_balanced_mock_foods(
                 seen_ids.add(fid)
                 return
 
-    # Bố trí slot: 0=tinh bột, 2=tinh bột giàu xơ, 1,4=đạm, 3=béo/hạt, 5=rau
-    _pick_from(carb_cands, day_offset)
-    _pick_from(prot_cands, day_offset)
+    # Bố trí 11 slot (3-4 món/bữa × 3 bữa chính) để cân đối kcal, macro & chất béo thực tế:
+    # Sáng: [0]=carb, [1]=đạm, [2]=rau
+    # Trưa: [3]=carb_xơ, [4]=đạm, [5]=rau, [6]=béo_1 (dầu/bơ/hạt)
+    # Tối:  [7]=carb, [8]=đạm, [9]=rau, [10]=béo_2 (dầu/bơ/hạt)
+    _pick_from(carb_cands, day_offset * 2)
+    _pick_from(prot_cands, day_offset * 2)
+    _pick_from(veg_cands, day_offset * 2)
+
     _pick_from(fiber_carb_cands, day_offset)
+    _pick_from(prot_cands, day_offset * 2 + 1)
+    _pick_from(veg_cands, day_offset * 2 + 1)
     _pick_from(fat_cands, day_offset)
-    _pick_from(prot_cands, day_offset + 1)
-    _pick_from(veg_cands, day_offset)
+
+    _pick_from(carb_cands, day_offset * 2 + 1)
+    _pick_from(prot_cands, day_offset * 2 + 2)
+    _pick_from(veg_cands, day_offset * 2 + 2)
+    _pick_from(fat_cands, day_offset + 1)
 
     for f in pool:
-        if len(picked) >= 6:
+        if len(picked) >= 11:
             break
         fid = int(f["id"])
         if fid not in seen_ids:
             picked.append(f)
             seen_ids.add(fid)
 
-    while len(picked) < 6:
+    while len(picked) < 11:
         picked.append(pool[len(picked) % len(pool)])
 
-    return picked[:6]
+    return picked[:11]
 
 
 def _optimize_mock_grams(
@@ -609,39 +654,48 @@ def _optimize_mock_grams(
     grams_min: float,
     grams_max: float,
 ) -> list[float]:
-    """Điều chỉnh khối lượng từng món trong [grams_min, grams_max] để bám sát kcal và macro."""
+    """Điều chỉnh khối lượng từng món trong biên thực tế để bám sát kcal, macro và cân đối bữa."""
     n = len(chosen)
-    grams = [grams_min] * n
+    bounds = [_item_grams_bounds(f, grams_min, grams_max) for f in chosen]
+    grams = [lo for lo, _ in bounds]
 
-    if n == 6:
-        # Khởi tạo gần mục tiêu từng macro: 0,2=carb; 1,4=protein; 5=rau; 3=fat
-        carb_each = targets.carb_g * 0.48
-        for idx in (0, 2):
+    if n == 11:
+        # 0,3,7=carb; 1,4,8=protein; 2,5,9=rau; 6,10=fat
+        carb_each = targets.carb_g * 0.30
+        for idx in (0, 3, 7):
             c100 = max(float(chosen[idx].get("carb_g") or 0.0), 5.0)
-            grams[idx] = _round_grams((carb_each / c100) * 100.0, grams_min, grams_max)
+            lo_i, hi_i = bounds[idx]
+            grams[idx] = _round_grams((carb_each / c100) * 100.0, lo_i, hi_i)
 
-        prot_each = targets.protein_g * 0.42
-        for idx in (1, 4):
+        prot_each = targets.protein_g * 0.28
+        for idx in (1, 4, 8):
             p100 = max(float(chosen[idx].get("protein_g") or 0.0), 5.0)
-            grams[idx] = _round_grams((prot_each / p100) * 100.0, grams_min, grams_max)
+            lo_i, hi_i = bounds[idx]
+            grams[idx] = _round_grams((prot_each / p100) * 100.0, lo_i, hi_i)
 
-        grams[5] = _round_grams(250.0, grams_min, grams_max)
+        for idx in (2, 5, 9):
+            lo_i, hi_i = bounds[idx]
+            grams[idx] = _round_grams(150.0, lo_i, hi_i)
 
         fat_so_far = sum(
-            float(chosen[i].get("fat_g") or 0.0) * (grams[i] / 100.0) for i in (0, 1, 2, 4, 5)
+            float(chosen[i].get("fat_g") or 0.0) * (grams[i] / 100.0)
+            for i in range(11)
+            if i not in (6, 10)
         )
-        fat_rem = max(0.0, targets.fat_g - fat_so_far)
-        f100 = max(float(chosen[3].get("fat_g") or 0.0), 5.0)
-        grams[3] = _round_grams((fat_rem / f100) * 100.0, grams_min, grams_max)
+        fat_rem = max(0.0, targets.fat_g - fat_so_far) * 0.5
+        for idx in (6, 10):
+            f100 = max(float(chosen[idx].get("fat_g") or 0.0), 5.0)
+            lo_i, hi_i = bounds[idx]
+            grams[idx] = _round_grams((fat_rem / f100) * 100.0, lo_i, hi_i)
     else:
         per_item_kcal = targets.target_kcal / max(n, 1)
         grams = [
             _round_grams(
                 (per_item_kcal / max(float(f.get("kcal") or 50.0), 15.0)) * 100.0,
-                grams_min,
-                grams_max,
+                lo_i,
+                hi_i,
             )
-            for f in chosen
+            for f, (lo_i, hi_i) in zip(chosen, bounds, strict=True)
         ]
 
     v_cfg = load_rules()["verifier"]
@@ -680,22 +734,36 @@ def _optimize_mock_grams(
             if tot_k < targets.kcal_floor
             else 0.0
         )
+        imbalance_pen = 0.0
+        if n == 11 and tot_k > 0:
+            for grp_idxs in ((0, 1, 2), (3, 4, 5, 6), (7, 8, 9, 10)):
+                mk = sum(
+                    float(chosen[i].get("kcal") or 0.0) * (g_list[i] / 100.0) for i in grp_idxs
+                )
+                sh = mk / tot_k
+                if sh < 0.18:
+                    imbalance_pen += 40.0 * (0.18 - sh)
+                elif sh > 0.48:
+                    imbalance_pen += 40.0 * (sh - 0.48)
+
         return (
             3.0 * err_k
             + 3.0 * (err_p + err_f + err_c)
-            + 15.0 * (na_pen + sg_pen)
+            + 50.0 * (na_pen + sg_pen)
             + fib_pen
             + floor_pen
+            + imbalance_pen
         )
 
     best_loss = _loss(grams)
     for step in (40.0, 20.0, 10.0, 5.0):
-        for _ in range(6):
+        for _ in range(10):
             improved = False
             for idx in range(n):
+                lo_i, hi_i = bounds[idx]
                 for delta in (-step, step):
                     cand = grams[idx] + delta
-                    if cand < grams_min or cand > grams_max:
+                    if cand < lo_i or cand > hi_i:
                         continue
                     trial = list(grams)
                     trial[idx] = cand
@@ -760,14 +828,27 @@ def generate_mock_meal_plan(
     for d in range(1, days + 1):
         chosen = _select_balanced_mock_foods(allowed_foods, targets, day_offset=d - 1)
         grams_list = _optimize_mock_grams(chosen, targets, grams_min, grams_max)
+        if len(chosen) >= 11:
+            meal_slots: tuple[tuple[str, tuple[int, ...]], ...] = (
+                ("breakfast", (0, 1, 2)),
+                ("lunch", (3, 4, 5, 6)),
+                ("dinner", (7, 8, 9, 10)),
+            )
+        else:
+            meal_slots = (
+                ("breakfast", (0, 1)),
+                ("lunch", (2, 3)),
+                ("dinner", (4, 5)),
+            )
         meals: list[Meal] = []
-        for idx, meal_name in enumerate(["breakfast", "lunch", "dinner"]):
+        for meal_name, positions in meal_slots:
             meal_items: list[PlannedItem] = []
-            for pos in (idx * 2, idx * 2 + 1):
-                food = chosen[pos]
-                meal_items.append(
-                    PlannedItem(food_id=int(food["id"]), grams=grams_list[pos])
-                )
+            for pos in positions:
+                if pos < len(chosen):
+                    food = chosen[pos]
+                    meal_items.append(
+                        PlannedItem(food_id=int(food["id"]), grams=grams_list[pos])
+                    )
             meals.append(Meal(meal=meal_name, items=meal_items))  # type: ignore[arg-type]
         day_plans.append(DayPlan(day=d, meals=meals))
 
@@ -782,6 +863,7 @@ def call_planner_llm(
     profile: PatientProfile | None = None,
     needs: NeedsResult | None = None,
     violations: list[Any] | None = None,
+    snippets: list[GuidelineSnippet] | None = None,
     force_violation: bool = False,
     mode: str | None = None,
     client: Any | None = None,
@@ -833,6 +915,7 @@ def call_planner_llm(
                 tokens_out=0,
                 metadata={"mode": "mock", "cache_hit": False, "est_cost_if_paid_usd": 0.0},
             )
+        record_execution("mock")
         return plan, {"tokens_in": 0, "tokens_out": 0}
 
     active_profile = profile or PatientProfile(
@@ -863,6 +946,7 @@ def call_planner_llm(
         needs=active_needs,
         allowed_foods=allowed_foods,
         violations=violations,
+        snippets=snippets,
         provider=provider,
     )
     resolved_cache_dir = Path(cache_dir or cfg_settings.LLM_CACHE_DIR)
@@ -910,6 +994,7 @@ def call_planner_llm(
                             "est_cost_if_paid_usd": paid_est,
                         },
                     )
+                    record_execution("cache")
                     return plan_cached, usage_cached
                 except ValidationError:
                     pass
@@ -1117,6 +1202,7 @@ def call_explain_llm(
                 tokens_out=0,
                 metadata={"mode": "mock", "cache_hit": False, "est_cost_if_paid_usd": 0.0},
             )
+            record_execution("mock")
             return out_text, {"tokens_in": 0, "tokens_out": 0}
 
     prompt = build_explain_prompt(
@@ -1167,6 +1253,7 @@ def call_explain_llm(
                         "est_cost_if_paid_usd": paid_est,
                     },
                 )
+                record_execution("cache")
                 return str(cached["text"]), usage_cached
 
         if is_groq:
@@ -1271,6 +1358,7 @@ def plan_menu(
     profile: PatientProfile | None = None,
     needs: NeedsResult | None = None,
     violations: list[Any] | None = None,
+    snippets: list[GuidelineSnippet] | None = None,
     force_violation: bool = False,
     mode: str | None = None,
     client: Any | None = None,
@@ -1290,6 +1378,7 @@ def plan_menu(
         profile=profile,
         needs=needs,
         violations=violations,
+        snippets=snippets,
         force_violation=force_violation,
         mode=mode,
         client=client,

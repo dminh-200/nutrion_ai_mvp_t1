@@ -1,0 +1,24 @@
+{
+  "llm_mode": "real",
+  "llm_provider": "alibaba",
+  "active_model": "qwen3.8-flash",
+  "chat_model": "qwen3.7-flash",
+  "chat_uses_dedicated_key": false,
+  "tools_mode": "direct",
+  "safety_llm": "off",
+  "langfuse_enabled": false,
+  "disclaimer_vi": "*Lưu ý: Thực đơn chỉ mang tính tham khảo hỗ trợ dinh dưỡng, không thay thế chẩn đoán hoặc chỉ định điều trị của bác sĩ.*",
+  "warnings": {
+    "has_warnings": true,
+    "todo_verify_count": 1,
+    "todo_verify_items": [
+      "config\\risk_rules.yaml.thresholds.bmi_low (value=16)"
+    ],
+    "is_sample_food": false,
+    "sample_food_warning": null,
+    "llm_warning": null,
+    "warnings": [
+      "Còn 1 giá trị quy tắc y khoa chưa kiểm chứng (TODO_VERIFY)."
+    ]
+  }
+}

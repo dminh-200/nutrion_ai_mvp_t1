@@ -23,10 +23,27 @@ ALLERGENS = [
 ]
 
 
+def _ensure_meal_plan_columns(engine: Engine) -> None:
+    """Bổ sung các cột lưu trữ nguy cơ/trích dẫn/vi phạm trên meal_plan nếu DB cũ chưa có."""
+    with engine.begin() as conn:
+        cols = {
+            row[1]
+            for row in conn.exec_driver_sql("PRAGMA table_info(meal_plan)").fetchall()
+        }
+        for col_name, col_def in (
+            ("risk_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ("snippets_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ("violations_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ):
+            if col_name not in cols:
+                conn.exec_driver_sql(f"ALTER TABLE meal_plan ADD COLUMN {col_name} {col_def}")
+
+
 def init_db(engine: Engine | None = None) -> None:
     """Tạo toàn bộ bảng và seed danh mục condition, allergen (idempotent)."""
     target_engine = engine or get_engine()
     Base.metadata.create_all(bind=target_engine)
+    _ensure_meal_plan_columns(target_engine)
 
     with Session(target_engine) as session:
         existing_conds = set(session.scalars(select(Condition.code)).all())

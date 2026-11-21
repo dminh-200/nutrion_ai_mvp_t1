@@ -6,7 +6,9 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from app.ui_helpers import (
+    execution_summary,
     format_meal_name,
+    format_risk_reason,
     get_status_badge_html,
     init_session_state,
     inject_custom_css,
@@ -57,6 +59,7 @@ if not result:
 
 # Trích xuất trạng thái
 status = str(result.get("status", "draft"))
+st.info(execution_summary(result.get("execution")))
 
 # ==============================================================================
 # QUY TẮC AN TOÀN Y TẾ BẤT BIẾN: BỊ CHẶN HOẶC CHUYỂN HƯỚNG BÁC SĨ (SPEC 6.4)
@@ -72,9 +75,8 @@ if status in ("blocked", "redirect_to_doctor"):
             """
             **Hệ thống AI từ chối sinh thực đơn tự động vì an toàn y tế của người bệnh.**
             
-            Theo quy chuẩn an toàn lâm sàng (**docs/SPEC.md mục 6.4**), các đối tượng có yếu tố 
-            nguy cơ cao cần được bác sĩ chuyên khoa hoặc chuyên gia dinh dưỡng lâm sàng trực tiếp 
-            thăm khám, xét nghiệm và chỉ định phác đồ điều trị chuyên biệt:
+            Một số tình trạng sức khỏe cần được bác sĩ hoặc chuyên gia dinh dưỡng lâm sàng
+            tư vấn trực tiếp trước khi xây dựng khẩu phần ăn:
             """
         )
 
@@ -88,7 +90,7 @@ if status in ("blocked", "redirect_to_doctor"):
         if reasons:
             st.markdown("##### 🔍 Yếu tố nguy cơ được hệ thống phát hiện:")
             for r in reasons:
-                st.warning(f"• {r}")
+                st.warning(f"• {format_risk_reason(r)}")
         else:
             st.warning(
                 "• Bệnh nhân thuộc nhóm đối tượng nguy cơ cao (thai kỳ/suy thận/rối loạn ăn uống)."
@@ -120,6 +122,12 @@ if status in ("blocked", "redirect_to_doctor"):
 # TRƯỜNG HỢP THỰC ĐƠN HỢP LỆ (APPROVED / PENDING_REVIEW / NEEDS_HUMAN_REVIEW)
 # ==============================================================================
 st.markdown(f"### Trạng thái thực đơn: {get_status_badge_html(status)}", unsafe_allow_html=True)
+if status == "pending_review":
+    st.info("Thực đơn đang chờ chuyên gia duyệt. Vui lòng chờ trước khi áp dụng.")
+elif status == "approved":
+    st.success("Thực đơn đã được chuyên gia duyệt. Bạn có thể xem chi tiết bên dưới.")
+elif status in ("needs_human_review", "rejected"):
+    st.warning("Hồ sơ cần chuyên gia xem xét trước khi áp dụng thực đơn.")
 
 # Lấy dữ liệu targets
 targets_raw = result.get("targets")
@@ -177,6 +185,28 @@ if isinstance(plan_scored, dict):
             items_list.append(it.model_dump())
     daily_totals = plan_scored.get("daily_totals", [])
 
+# Graph trả tổng ngày; chi tiết món nằm trong bản ghi thực đơn đã lưu.
+plan_id = result.get("meal_plan_id")
+if plan_id and not items_list:
+    persisted = get_meal_plan_detail(int(plan_id))
+    if persisted:
+        items_list = list(persisted.get("items", []))
+        daily_totals = list(persisted.get("daily_totals", []))
+
+has_menu = bool(items_list) and bool(daily_totals)
+demo_role = st.session_state.get("demo_role", "Người bệnh")
+if demo_role == "Người bệnh" and status in ("pending_review", "needs_human_review"):
+    st.info(
+        "⏳ Thực đơn đang chờ chuyên gia dinh dưỡng thẩm định và phê duyệt. "
+        "Chi tiết món ăn sẽ hiển thị sau khi được duyệt "
+        "(hoặc chuyển vai trò sang Chuyên gia ở sidebar để xem trước)."
+    )
+    render_disclaimer()
+    st.stop()
+
+if not has_menu:
+    st.warning("Chưa có thực đơn đạt kiểm chứng để hiển thị. Hồ sơ cần chuyên gia xem xét.")
+
 # Tính trung bình dinh dưỡng các ngày
 n_days = len(daily_totals) if daily_totals else 1
 avg_kcal = sum(d.get("kcal", 0) for d in daily_totals) / n_days if daily_totals else 0.0
@@ -186,9 +216,66 @@ avg_carb = sum(d.get("carb_g", 0) for d in daily_totals) / n_days if daily_total
 avg_sodium = sum(d.get("sodium_mg", 0) for d in daily_totals) / n_days if daily_totals else 0.0
 avg_fiber = sum(d.get("fiber_g", 0) for d in daily_totals) / n_days if daily_totals else 0.0
 
+# Bảng thực đơn chi tiết từng ngày
+st.markdown("#### 🍱 Chi Tiết Thực Đơn Từng Ngày")
+
+# Phân nhóm món ăn theo Ngày và Bữa
+by_day: dict[int, dict[str, list[dict[str, Any]]]] = {}
+for it in items_list:
+    d = int(it.get("day", 1))
+    m = str(it.get("meal", "breakfast"))
+    by_day.setdefault(d, {}).setdefault(m, []).append(it)
+
+days_sorted = sorted(by_day.keys())
+tabs = st.tabs([f"📅 Ngày {d}" for d in days_sorted]) if days_sorted else []
+
+for tab, day_num in zip(tabs, days_sorted, strict=False):
+    with tab:
+        day_meals = by_day.get(day_num, {})
+        for meal_code in ("breakfast", "lunch", "dinner", "snack"):
+            meal_items = day_meals.get(meal_code, [])
+            if not meal_items:
+                continue
+
+            st.markdown(f"##### {format_meal_name(meal_code)}")
+            with st.container(border=True):
+                for item in meal_items:
+                    name = str(item.get("name_vi", "Món ăn"))
+                    grams = float(item.get("grams", 0))
+                    left, right = st.columns([4, 1])
+                    left.markdown(f"**{name}**")
+                    right.markdown(f"**{grams:.0f} g**")
+            table_data: list[dict[str, Any]] = []
+            for it in meal_items:
+                table_data.append(
+                    {
+                        "Tên món ăn (Việt Nam)": it.get("name_vi", "Món ăn"),
+                        "Định lượng (g)": f"{it.get('grams', 0):.0f}g",
+                        "Kcal": round(it.get("kcal", 0), 1),
+                        "Đạm (g)": round(it.get("protein_g", 0), 1),
+                        "Béo (g)": round(it.get("fat_g", 0), 1),
+                        "Tinh bột (g)": round(it.get("carb_g", 0), 1),
+                        "Natri (mg)": round(it.get("sodium_mg", 0), 1),
+                    }
+                )
+            with st.expander("Xem số liệu dinh dưỡng"):
+                st.dataframe(table_data, width="stretch", hide_index=True)
+
+        # Hiển thị tổng ngày
+        curr_total = next((t for t in daily_totals if t.get("day") == day_num), None)
+        if curr_total:
+            st.info(
+                f"**Tổng ngày {day_num}:** {curr_total.get('kcal', 0):.0f} Kcal | "
+                f"Đạm: {curr_total.get('protein_g', 0):.1f}g | "
+                f"Béo: {curr_total.get('fat_g', 0):.1f}g | "
+                f"Tinh bột: {curr_total.get('carb_g', 0):.1f}g | "
+                f"Natri: {curr_total.get('sodium_mg', 0):.0f}mg (chưa gồm gia vị nêm nếm)"
+            )
+
 # Nâng cấp trực quan R3: Biểu đồ Donut Macro & Progress Bars
-with st.container(border=True):
-    st.markdown("#### ⚖️ Cân Bằng Dinh Dưỡng Thực Tế (Trung Bình Mỗi Ngày)")
+if has_menu:
+  with st.container(border=True):
+    st.markdown("#### Thành phần dinh dưỡng trung bình mỗi ngày")
     col_chart, col_prog = st.columns([1, 1])
 
     with col_chart:
@@ -204,7 +291,7 @@ with st.container(border=True):
                     labels=["Đạm (Protein)", "Béo (Fat)", "Tinh bột (Carb)"],
                     values=[round(p_kcal, 1), round(f_kcal, 1), round(c_kcal, 1)],
                     hole=0.55,
-                    marker=dict(colors=["#0D9488", "#F59E0B", "#0284C7"]),
+                    marker=dict(colors=["#0D9488", "#F97316", "#2563EB"]),
                     textinfo="label+percent",
                     hoverinfo="label+value+percent",
                 )
@@ -218,69 +305,27 @@ with st.container(border=True):
             plot_bgcolor="rgba(0,0,0,0)",
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.caption(
+            f"Đạm {avg_protein:.1f} g · Béo {avg_fat:.1f} g · Tinh bột {avg_carb:.1f} g"
+        )
 
     with col_prog:
         st.markdown(f"**Năng lượng thực tế:** {avg_kcal:.0f} / {target_kcal:.0f} kcal")
         kcal_ratio = min(max(avg_kcal / target_kcal, 0.0), 1.5) if target_kcal > 0 else 0.0
         st.progress(min(kcal_ratio, 1.0))
 
-        st.markdown(f"**Natri trung bình:** {avg_sodium:.0f} / {sodium_max_mg:.0f} mg")
+        st.markdown(f"**Natri:** {avg_sodium:.0f} mg · Giới hạn tối đa {sodium_max_mg:.0f} mg")
+        if avg_sodium > sodium_max_mg:
+            st.warning("Natri vượt giới hạn mục tiêu.")
         sod_ratio = min(max(avg_sodium / sodium_max_mg, 0.0), 1.5) if sodium_max_mg > 0 else 0.0
         st.progress(min(sod_ratio, 1.0))
 
-        st.markdown(f"**Chất xơ trung bình:** {avg_fiber:.1f} / {fiber_min_g:.0f} g")
+        st.markdown(f"**Chất xơ:** {avg_fiber:.1f} g · Mục tiêu tối thiểu {fiber_min_g:.0f} g")
         fib_ratio = min(max(avg_fiber / fiber_min_g, 0.0), 1.5) if fiber_min_g > 0 else 0.0
         st.progress(min(fib_ratio, 1.0))
 
-        st.caption("Khẩu phần đã được cân bằng tỷ lệ chất sinh năng lượng theo hướng dẫn.")
-
-# Bảng thực đơn chi tiết từng ngày
-st.markdown("#### 🍱 Chi Tiết Thực Đơn Từng Ngày")
-
-# Phân nhóm món ăn theo Ngày và Bữa
-by_day: dict[int, dict[str, list[dict[str, Any]]]] = {}
-for it in items_list:
-    d = int(it.get("day", 1))
-    m = str(it.get("meal", "breakfast"))
-    by_day.setdefault(d, {}).setdefault(m, []).append(it)
-
-days_sorted = sorted(by_day.keys()) if by_day else [1]
-tabs = st.tabs([f"📅 Ngày {d}" for d in days_sorted])
-
-for tab, day_num in zip(tabs, days_sorted, strict=False):
-    with tab:
-        day_meals = by_day.get(day_num, {})
-        for meal_code in ("breakfast", "lunch", "dinner", "snack"):
-            meal_items = day_meals.get(meal_code, [])
-            if not meal_items:
-                continue
-
-            st.markdown(f"##### 🍴 {format_meal_name(meal_code)}")
-            table_data: list[dict[str, Any]] = []
-            for it in meal_items:
-                table_data.append(
-                    {
-                        "Tên món ăn (Việt Nam)": it.get("name_vi", "Món ăn"),
-                        "Định lượng (g)": f"{it.get('grams', 0):.0f}g",
-                        "Kcal": round(it.get("kcal", 0), 1),
-                        "Đạm (g)": round(it.get("protein_g", 0), 1),
-                        "Béo (g)": round(it.get("fat_g", 0), 1),
-                        "Tinh bột (g)": round(it.get("carb_g", 0), 1),
-                        "Natri (mg)": round(it.get("sodium_mg", 0), 1),
-                    }
-                )
-            st.dataframe(table_data, use_container_width=True, hide_index=True)
-
-        # Hiển thị tổng ngày
-        curr_total = next((t for t in daily_totals if t.get("day") == day_num), None)
-        if curr_total:
-            st.info(
-                f"**Tổng ngày {day_num}:** {curr_total.get('kcal', 0):.0f} Kcal | "
-                f"Đạm: {curr_total.get('protein_g', 0):.1f}g | "
-                f"Béo: {curr_total.get('fat_g', 0):.1f}g | "
-                f"Tinh bột: {curr_total.get('carb_g', 0):.1f}g | "
-                f"Natri: {curr_total.get('sodium_mg', 0):.0f}mg"
-            )
+        if status in ("approved", "pending_review"):
+            st.caption("Số liệu dinh dưỡng được tính từ cơ sở dữ liệu thực phẩm.")
 
 # Giải thích & Trích dẫn hướng dẫn lâm sàng
 explanation_md = result.get("explanation_md", "")

@@ -14,7 +14,6 @@ from db.models import (
     Allergen,
     Condition,
     Food,
-    FoodNutrient,
     GuardrailEvent,
     HealthProfile,
     MealPlan,
@@ -35,6 +34,9 @@ def create_meal_plan(
     status: str = "draft",
     targets_json: str = "{}",
     needs_json: str = "{}",
+    risk_json: str = "{}",
+    snippets_json: str = "[]",
+    violations_json: str = "[]",
     explanation_md: str = "",
     retry_count: int = 0,
     verifier_passed_first_try: bool = False,
@@ -46,6 +48,9 @@ def create_meal_plan(
         status=status,
         targets_json=targets_json,
         needs_json=needs_json,
+        risk_json=risk_json,
+        snippets_json=snippets_json,
+        violations_json=violations_json,
         explanation_md=explanation_md,
         retry_count=retry_count,
         verifier_passed_first_try=verifier_passed_first_try,
@@ -68,6 +73,9 @@ def update_meal_plan_status(
     explanation_md: str | None = None,
     retry_count: int | None = None,
     verifier_passed_first_try: bool | None = None,
+    risk_json: str | None = None,
+    snippets_json: str | None = None,
+    violations_json: str | None = None,
 ) -> MealPlan | None:
     """Cập nhật trạng thái và thông tin liên quan của meal_plan."""
     plan = session.get(MealPlan, meal_plan_id)
@@ -80,6 +88,12 @@ def update_meal_plan_status(
         plan.retry_count = retry_count
     if verifier_passed_first_try is not None:
         plan.verifier_passed_first_try = verifier_passed_first_try
+    if risk_json is not None:
+        plan.risk_json = risk_json
+    if snippets_json is not None:
+        plan.snippets_json = snippets_json
+    if violations_json is not None:
+        plan.violations_json = violations_json
     session.flush()
     return plan
 
@@ -442,6 +456,50 @@ def get_meal_plan_detail(
             needs_dict = json.loads(plan.needs_json)
         except Exception:
             needs_dict = {}
+        try:
+            risk_dict = json.loads(getattr(plan, "risk_json", "{}") or "{}")
+            if not isinstance(risk_dict, dict):
+                risk_dict = {}
+        except Exception:
+            risk_dict = {}
+        try:
+            snippets_list = json.loads(getattr(plan, "snippets_json", "[]") or "[]")
+            if not isinstance(snippets_list, list):
+                snippets_list = []
+        except Exception:
+            snippets_list = []
+        try:
+            violations_list = json.loads(getattr(plan, "violations_json", "[]") or "[]")
+            if not isinstance(violations_list, list):
+                violations_list = []
+        except Exception:
+            violations_list = []
+
+        if not risk_dict and plan.status == "redirect_to_doctor" and prof is not None:
+            from core.classify import assess_risk
+            from core.schemas import PatientProfile
+
+            try:
+                p_obj = PatientProfile(
+                    patient_code=pat.code if pat else "ANON",
+                    age=prof.age,
+                    sex=prof.sex,  # type: ignore[arg-type]
+                    height_cm=prof.height_cm,
+                    weight_kg=prof.weight_kg,
+                    activity_level=prof.activity_level,  # type: ignore[arg-type]
+                    conditions=cond_codes,  # type: ignore[arg-type]
+                    allergens=allergen_codes,  # type: ignore[arg-type]
+                    pregnancy=prof.pregnancy,
+                    lactating=prof.lactating,
+                    ckd_stage=prof.ckd_stage,
+                    dialysis=prof.dialysis,
+                    eating_disorder=prof.eating_disorder,
+                    preferences_text=prof.preferences_text,
+                    days=prof.days,
+                )
+                risk_dict = assess_risk(p_obj).model_dump()
+            except Exception:
+                risk_dict = {}
 
         item_rows = sess.execute(
             select(MealPlanItem, Food)
@@ -558,6 +616,9 @@ def get_meal_plan_detail(
             },
             "targets": targets_dict,
             "needs": needs_dict,
+            "risk": risk_dict or None,
+            "snippets": snippets_list,
+            "violations": violations_list,
             "items": items_list,
             "by_day": by_day,
             "daily_totals": daily_totals,
@@ -664,9 +725,27 @@ def preview_and_verify_edited_items(
             days_list.append(DayPlan(day=d, meals=meals_list))
 
         base_plan = MealPlanLLM(days=days_list, cannot_plan=False, reason="")
+        if not edited_items:
+            empty_viol = [
+                {
+                    "code": "DAY_COUNT",
+                    "message_vi": "Thực đơn chỉnh sửa không có món ăn nào.",
+                    "day": None,
+                    "meal": None,
+                    "food_id": None,
+                }
+            ]
+            return {
+                "is_valid": False,
+                "violations": empty_viol,
+                "daily_totals": [],
+                "scored_items": [],
+                "plan_llm": MealPlanLLM(days=[], cannot_plan=False, reason="").model_dump(),
+            }
+
         new_plan = _apply_edited_items(base_plan, edited_items)
 
-        food_db = load_food_db_from_sqlite()
+        food_db = load_food_db_from_sqlite(session=sess)
         scoring_res = score_menu(new_plan, food_db=food_db)
 
         with ToolsGateway(mode="direct") as gw:
@@ -679,8 +758,11 @@ def preview_and_verify_edited_items(
                 food_db=food_db,
             )
 
+        has_positive_items = any(
+            it.grams > 0 for d in new_plan.days for m in d.meals for it in m.items
+        )
         return {
-            "is_valid": len(violations) == 0,
+            "is_valid": len(violations) == 0 and has_positive_items and bool(scoring_res["items"]),
             "violations": [v.model_dump() for v in violations],
             "daily_totals": scoring_res["daily_totals"],
             "scored_items": [it.model_dump() for it in scoring_res["items"]],
@@ -716,52 +798,68 @@ def record_review_for_finalized_plan(
         if plan is None:
             raise ValueError(f"Không tìm thấy meal_plan có id={meal_plan_id}")
 
+        if plan.status != "needs_human_review":
+            raise ValueError("Chỉ ca cần chuyên gia xem mới được xử lý ngoài luồng duyệt.")
+
+        verification: dict[str, Any] | None = None
+        if decision_clean in ("approve", "edit"):
+            current_items = list(
+                sess.scalars(
+                    select(MealPlanItem).where(MealPlanItem.meal_plan_id == meal_plan_id)
+                ).all()
+            )
+            if not current_items:
+                raise ValueError("Không thể duyệt thực đơn chưa có món ăn.")
+            if decision_clean == "edit" and not edited_items:
+                raise ValueError("Cần danh sách món chỉnh sửa hợp lệ khi chọn sửa thực đơn.")
+            candidate_items = edited_items if decision_clean == "edit" else [
+                {
+                    "day": item.day,
+                    "meal": item.meal,
+                    "food_id": item.food_id,
+                    "grams": item.grams,
+                }
+                for item in current_items
+            ]
+            verification = preview_and_verify_edited_items(
+                meal_plan_id, candidate_items or [], session=sess
+            )
+            if not verification["is_valid"] or not verification.get("scored_items"):
+                raise ValueError("Thực đơn còn vi phạm kiểm chứng; chỉ có thể từ chối.")
+
         new_status = "approved" if decision_clean in ("approve", "edit") else "rejected"
         plan.status = new_status
+        if new_status == "approved":
+            plan.violations_json = "[]"
 
-        if decision_clean == "edit" and edited_items:
+        if decision_clean == "edit" and verification is not None:
             sess.execute(delete(MealPlanItem).where(MealPlanItem.meal_plan_id == meal_plan_id))
             sess.flush()
 
-            food_ids = [
-                int(it["food_id"])
-                for it in edited_items
-                if "food_id" in it and float(it.get("grams", 0)) > 0
-            ]
-            nutrients = (
-                sess.scalars(select(FoodNutrient).where(FoodNutrient.food_id.in_(food_ids))).all()
-                if food_ids
-                else []
-            )
-            nutr_map = {n.food_id: n for n in nutrients}
-
-            for it in edited_items:
-                g = float(it.get("grams", 0.0))
-                if g <= 0:
-                    continue
-                fid = int(it["food_id"])
-                n = nutr_map.get(fid)
-                factor = g / 100.0
-                kcal = (n.kcal * factor) if n else 0.0
-                protein_g = (n.protein_g * factor) if n else 0.0
-                fat_g = (n.fat_g * factor) if n else 0.0
-                carb_g = (n.carb_g * factor) if n else 0.0
-                sodium_mg = (n.sodium_mg * factor) if n else 0.0
-
-                sess.add(
-                    MealPlanItem(
-                        meal_plan_id=meal_plan_id,
-                        day=int(it.get("day", 1)),
-                        meal=str(it.get("meal", "breakfast")),
-                        food_id=fid,
-                        grams=g,
-                        kcal=kcal,
-                        protein_g=protein_g,
-                        fat_g=fat_g,
-                        carb_g=carb_g,
-                        sodium_mg=sodium_mg,
-                    )
-                )
+            verified_plan = verification.get("plan_llm") or {}
+            scored_list = list(verification.get("scored_items") or [])
+            scored_idx = 0
+            for day_obj in verified_plan.get("days", []):
+                day_num = int(day_obj["day"])
+                for meal_obj in day_obj.get("meals", []):
+                    meal_name = str(meal_obj["meal"])
+                    for _ in meal_obj.get("items", []):
+                        s_item = scored_list[scored_idx]
+                        scored_idx += 1
+                        sess.add(
+                            MealPlanItem(
+                                meal_plan_id=meal_plan_id,
+                                day=day_num,
+                                meal=meal_name,
+                                food_id=int(s_item["food_id"]),
+                                grams=float(s_item["grams"]),
+                                kcal=float(s_item["kcal"]),
+                                protein_g=float(s_item["protein_g"]),
+                                fat_g=float(s_item["fat_g"]),
+                                carb_g=float(s_item["carb_g"]),
+                                sodium_mg=float(s_item["sodium_mg"]),
+                            )
+                        )
 
         edited_json = json.dumps(edited_items or [], ensure_ascii=False)
         rev = Review(
@@ -811,6 +909,7 @@ def get_dashboard_dataset(
         if not include_synthetic:
             stmt = stmt.where(QueryLog.is_synthetic_log == False)  # noqa: E712
 
+        dt_start: datetime | None = None
         if start_date is not None:
             if isinstance(start_date, date) and not isinstance(start_date, datetime):
                 dt_start = datetime.combine(start_date, time.min)
@@ -818,6 +917,7 @@ def get_dashboard_dataset(
                 dt_start = start_date
             stmt = stmt.where(QueryLog.created_at >= dt_start)
 
+        dt_end: datetime | None = None
         if end_date is not None:
             if isinstance(end_date, date) and not isinstance(end_date, datetime):
                 dt_end = datetime.combine(end_date, time.max)
@@ -829,6 +929,21 @@ def get_dashboard_dataset(
 
         if condition:
             cond_clean = condition.strip().lower()
+            matched_mp_ids = set(
+                sess.scalars(
+                    select(MealPlan.id)
+                    .join(HealthProfile, MealPlan.profile_id == HealthProfile.id)
+                    .join(ProfileCondition, HealthProfile.id == ProfileCondition.profile_id)
+                    .join(Condition, ProfileCondition.condition_id == Condition.id)
+                    .where(Condition.code == cond_clean)
+                ).all()
+            )
+            mp_id_set = {log.meal_plan_id for log in all_logs if log.meal_plan_id is not None}
+            existing_mp_ids_all = (
+                set(sess.scalars(select(MealPlan.id).where(MealPlan.id.in_(mp_id_set))).all())
+                if mp_id_set
+                else set()
+            )
             matched_patient_codes = set(
                 sess.scalars(
                     select(Patient.code)
@@ -838,7 +953,15 @@ def get_dashboard_dataset(
                     .where(Condition.code == cond_clean)
                 ).all()
             )
-            all_logs = [log for log in all_logs if log.patient_code in matched_patient_codes]
+            all_logs = [
+                log
+                for log in all_logs
+                if (
+                    log.meal_plan_id in matched_mp_ids
+                    if (log.meal_plan_id is not None and log.meal_plan_id in existing_mp_ids_all)
+                    else log.patient_code in matched_patient_codes
+                )
+            ]
 
         total_requests = len(all_logs)
         approved_count = sum(1 for log in all_logs if log.status == "approved")
@@ -880,13 +1003,27 @@ def get_dashboard_dataset(
         est_cost_usd = round(sum(log.est_cost_usd for log in all_logs), 4)
 
         sess_ids = {log.session_id for log in all_logs if log.session_id}
-        guardrail_events = []
+        events_by_id: dict[int, GuardrailEvent] = {}
         if sess_ids:
-            guardrail_events = list(
-                sess.scalars(
-                    select(GuardrailEvent).where(GuardrailEvent.session_id.in_(sess_ids))
-                ).all()
+            for ge in sess.scalars(
+                select(GuardrailEvent).where(GuardrailEvent.session_id.in_(sess_ids))
+            ).all():
+                events_by_id[int(ge.id)] = ge
+
+        # Bổ sung GuardrailEvent của Chatbot và API validation không có dòng QueryLog
+        if not condition:
+            extra_ge_stmt = select(GuardrailEvent).where(
+                GuardrailEvent.layer.in_(("chat_input", "chat_output"))
+                | (GuardrailEvent.type == "validation")
             )
+            if dt_start is not None:
+                extra_ge_stmt = extra_ge_stmt.where(GuardrailEvent.created_at >= dt_start)
+            if dt_end is not None:
+                extra_ge_stmt = extra_ge_stmt.where(GuardrailEvent.created_at <= dt_end)
+            for ge in sess.scalars(extra_ge_stmt).all():
+                events_by_id[int(ge.id)] = ge
+
+        guardrail_events = list(events_by_id.values())
         guardrail_trigger_count = len(guardrail_events)
 
         kpis = {
@@ -930,18 +1067,40 @@ def get_dashboard_dataset(
         trend_by_date = [by_date[k] for k in sorted(by_date.keys())]
 
         cond_counter: dict[str, int] = {"t2d": 0, "htn": 0, "gout": 0, "obesity": 0}
+        mp_ids = {log.meal_plan_id for log in all_logs if log.meal_plan_id is not None}
+        existing_mp_ids: set[int] = set()
+        mp_cond_map: dict[int, set[str]] = {}
+        if mp_ids:
+            existing_mp_ids = {
+                int(mid)
+                for mid in sess.scalars(select(MealPlan.id).where(MealPlan.id.in_(mp_ids))).all()
+            }
+            mp_rows = sess.execute(
+                select(MealPlan.id, Condition.code)
+                .join(HealthProfile, MealPlan.profile_id == HealthProfile.id)
+                .join(ProfileCondition, HealthProfile.id == ProfileCondition.profile_id)
+                .join(Condition, ProfileCondition.condition_id == Condition.id)
+                .where(MealPlan.id.in_(mp_ids))
+            ).all()
+            for mp_id, ccode in mp_rows:
+                mp_cond_map.setdefault(int(mp_id), set()).add(ccode)
+
         p_rows = sess.execute(
             select(Patient.code, Condition.code)
             .join(HealthProfile, Patient.id == HealthProfile.patient_id)
             .join(ProfileCondition, HealthProfile.id == ProfileCondition.profile_id)
             .join(Condition, ProfileCondition.condition_id == Condition.id)
+            .distinct()
         ).all()
-        p_cond_map: dict[str, list[str]] = {}
+        p_cond_map: dict[str, set[str]] = {}
         for pcode, ccode in p_rows:
-            p_cond_map.setdefault(pcode, []).append(ccode)
+            p_cond_map.setdefault(pcode, set()).add(ccode)
 
         for log in all_logs:
-            p_conds = p_cond_map.get(log.patient_code, [])
+            if log.meal_plan_id is not None and log.meal_plan_id in existing_mp_ids:
+                p_conds = mp_cond_map.get(log.meal_plan_id, set())
+            else:
+                p_conds = p_cond_map.get(log.patient_code, set())
             for c in p_conds:
                 if c in cond_counter:
                     cond_counter[c] += 1

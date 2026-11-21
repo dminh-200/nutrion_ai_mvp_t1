@@ -1,0 +1,112 @@
+[
+  {
+    "case": "pregnancy",
+    "http": 200,
+    "status": "redirect_to_doctor",
+    "plan_id": 660,
+    "item_count": 0,
+    "daily_count": 0,
+    "llm_calls": 0,
+    "api_attempts": 0,
+    "risk": "RISK_PREG"
+  },
+  {
+    "case": "lactating",
+    "http": 200,
+    "status": "redirect_to_doctor",
+    "plan_id": 661,
+    "item_count": 0,
+    "daily_count": 0,
+    "llm_calls": 0,
+    "api_attempts": 0,
+    "risk": "RISK_LACT"
+  },
+  {
+    "case": "under18",
+    "http": 200,
+    "status": "redirect_to_doctor",
+    "plan_id": 662,
+    "item_count": 0,
+    "daily_count": 0,
+    "llm_calls": 0,
+    "api_attempts": 0,
+    "risk": "RISK_MINOR"
+  },
+  {
+    "case": "ckd4",
+    "http": 200,
+    "status": "redirect_to_doctor",
+    "plan_id": 663,
+    "item_count": 0,
+    "daily_count": 0,
+    "llm_calls": 0,
+    "api_attempts": 0,
+    "risk": "RISK_CKD"
+  },
+  {
+    "case": "ckd5",
+    "http": 200,
+    "status": "redirect_to_doctor",
+    "plan_id": 664,
+    "item_count": 0,
+    "daily_count": 0,
+    "llm_calls": 0,
+    "api_attempts": 0,
+    "risk": "RISK_CKD"
+  },
+  {
+    "case": "dialysis",
+    "http": 200,
+    "status": "redirect_to_doctor",
+    "plan_id": 665,
+    "item_count": 0,
+    "daily_count": 0,
+    "llm_calls": 0,
+    "api_attempts": 0,
+    "risk": "RISK_CKD"
+  },
+  {
+    "case": "eating_disorder",
+    "http": 200,
+    "status": "redirect_to_doctor",
+    "plan_id": 666,
+    "item_count": 0,
+    "daily_count": 0,
+    "llm_calls": 0,
+    "api_attempts": 0,
+    "risk": "RISK_ED"
+  },
+  {
+    "case": "bmi15",
+    "http": 200,
+    "status": "redirect_to_doctor",
+    "plan_id": 667,
+    "item_count": 0,
+    "daily_count": 0,
+    "llm_calls": 0,
+    "api_attempts": 0,
+    "risk": "RISK_BMI_LOW"
+  },
+  {
+    "case": "injection_vi",
+    "http": 200,
+    "status": "blocked",
+    "plan_id": 668,
+    "item_count": 0,
+    "daily_count": 0,
+    "llm_calls": 0,
+    "api_attempts": 0,
+    "risk": ""
+  },
+  {
+    "case": "injection_en",
+    "http": 200,
+    "status": "blocked",
+    "plan_id": 669,
+    "item_count": 0,
+    "daily_count": 0,
+    "llm_calls": 0,
+    "api_attempts": 0,
+    "risk": ""
+  }
+]

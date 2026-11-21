@@ -1,0 +1,60 @@
+.FF......                                                                [100%]
+================================== FAILURES ===================================
+______________________ test_run_approve_and_detail_flow _______________________
+
+api_client = <starlette.testclient.TestClient object at 0x0000028446443020>
+
+    def test_run_approve_and_detail_flow(api_client: TestClient) -> None:
+        """Lu\u1ed3ng \u0111\u1ea7y \u0111\u1ee7: run_request -> pending_review -> approve -> approved + chi ti\u1ebft."""
+        payload = {
+            "patient_code": "P_API_1",
+            "age": 48,
+            "sex": "female",
+            "height_cm": 160.0,
+            "weight_kg": 62.0,
+            "activity_level": "moderate",
+            "conditions": ["t2d"],
+            "allergens": ["seafood"],
+            "preferences_text": "Th\xedch rau xanh v\xe0 th\u1ecbt g\xe0",
+            "days": 2,
+        }
+        r_run = api_client.post("/api/meal-plans/run", json=payload)
+        assert r_run.status_code == 200
+        run_data = r_run.json()
+>       assert run_data["status"] == "pending_review"
+E       AssertionError: assert 'needs_human_review' == 'pending_review'
+E         
+E         - pending_review
+E         + needs_human_review
+
+tests\test_api.py:108: AssertionError
+---------------------------- Captured stderr call -----------------------------
+\rLoading weights:   0%|          | 0/199 [00:00<?, ?it/s]\rLoading weights:  15%|\u2588\u258c        | 30/199 [00:00<00:00, 285.90it/s]\rLoading weights: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 199/199 [00:00<00:00, 1285.55it/s]
+________________ test_preview_edit_and_submit_edit_and_reject _________________
+
+api_client = <starlette.testclient.TestClient object at 0x000002847A77CB30>
+
+    def test_preview_edit_and_submit_edit_and_reject(api_client: TestClient) -> None:
+        """Ki\u1ec3m tra dry-run preview-edit, edit -> approved, v\xe0 reject b\u1eaft bu\u1ed9c c\xf3 l\xfd do."""
+        payload = {
+            "patient_code": "P_API_2",
+            "age": 48,
+            "sex": "female",
+            "height_cm": 160.0,
+            "weight_kg": 62.0,
+            "activity_level": "moderate",
+            "conditions": ["t2d"],
+            "days": 1,
+        }
+        r_run = api_client.post("/api/meal-plans/run", json=payload)
+        assert r_run.status_code == 200
+        plan_id = r_run.json()["meal_plan_id"]
+        items = r_run.json()["items"]
+>       assert items
+E       assert []
+
+tests\test_api.py:154: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_api.py::test_run_approve_and_detail_flow - AssertionError: ...
+FAILED tests/test_api.py::test_preview_edit_and_submit_edit_and_reject - asse...
+2 failed, 7 passed, 239 deselected in 62.24s (0:01:02)

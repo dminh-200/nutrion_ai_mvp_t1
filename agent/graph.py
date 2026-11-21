@@ -13,6 +13,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from agent.nodes import (
@@ -33,9 +34,11 @@ from agent.state import AgentState
 from agent.tools_gateway import ToolsGateway
 from config.settings import get_settings
 from core.schemas import PatientProfile
+from db.models import QueryLog
 from db.repo import get_meal_plan_by_thread
 from db.session import get_engine
 from guardrails.input import validate_profile_input
+from observability.execution import observe_execution
 from observability.querylog import estimate_cost_usd, upsert_query_log
 from observability.tracing import (
     create_request_trace_id,
@@ -292,6 +295,7 @@ def _extract_safe_trace_context(
     return patient_code, raw_display_name, raw_pref_text, raw_conditions, raw_days
 
 
+@observe_execution
 def run_request(
     profile: PatientProfile | dict[str, Any],
     *,
@@ -504,6 +508,7 @@ def run_request(
     return result
 
 
+@observe_execution
 def resume_review(
     thread_id: str,
     decision: str | dict[str, Any] = "approve",
@@ -551,10 +556,19 @@ def resume_review(
     patient_code = "UNKNOWN"
     raw_pref_text = ""
 
+    prev_latency_ms = 0.0
     with Session(get_engine()) as db_sess:
         existing_plan = get_meal_plan_by_thread(db_sess, thread_id)
         db_status = existing_plan.status if existing_plan is not None else None
         db_plan_id = existing_plan.id if existing_plan is not None else None
+        if existing_plan is not None:
+            prev_qlog = db_sess.scalar(
+                select(QueryLog)
+                .where(QueryLog.meal_plan_id == existing_plan.id)
+                .order_by(QueryLog.id.desc())
+            )
+            if prev_qlog is not None:
+                prev_latency_ms = float(prev_qlog.latency_ms or 0.0)
 
     with ToolsGateway(mode=tools_mode) as gw, open_checkpointer(db_path) as checkpointer:
         graph = build_graph(gw, checkpointer=checkpointer)
@@ -599,7 +613,8 @@ def resume_review(
             result = dict(raw_result)
             elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
             metrics = dict(result.get("metrics") or {})
-            metrics["latency_ms"] = round(float(metrics.get("latency_ms", 0.0)) + elapsed_ms, 2)
+            base_latency_ms = max(float(metrics.get("latency_ms", 0.0)), prev_latency_ms)
+            metrics["latency_ms"] = round(base_latency_ms + elapsed_ms, 2)
             result["metrics"] = metrics
             result["trace_id"] = resolved_trace_id
 

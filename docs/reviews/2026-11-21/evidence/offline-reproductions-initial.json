@@ -1,0 +1,132 @@
+{
+  "mode": "mock/direct",
+  "isolated_db": "C:\\Users\\Admin\\AppData\\Local\\Temp\\nutriai-review-9bmz4evo",
+  "checks": {
+    "delete_all_preview": {
+      "is_valid": true,
+      "scored_count": 6,
+      "daily_totals": [
+        {
+          "day": 1,
+          "kcal": 2384.1,
+          "protein_g": 119.1,
+          "fat_g": 94.5,
+          "carb_g": 264.5,
+          "sodium_mg": 463.0,
+          "fiber_g": 109.5,
+          "sugar_g": 19.2
+        }
+      ],
+      "expected": "invalid, empty menu"
+    },
+    "invalid_edit": {
+      "http": 200,
+      "status": "needs_human_review",
+      "persisted_items": 6
+    },
+    "approved_empty_menu": {
+      "http": 200,
+      "status": "approved",
+      "persisted_items": 0,
+      "daily_totals": [],
+      "violations": []
+    },
+    "chat_context_targets": {
+      "stored_targets": {
+        "bmi": 24.2,
+        "bmr": 1542.5,
+        "tdee": 2390.9,
+        "target_kcal": 2390.0,
+        "protein_g": 119.5,
+        "fat_g": 92.9,
+        "carb_g": 268.9,
+        "fiber_min_g": 25.0,
+        "sodium_max_mg": 2300.0,
+        "sugar_max_g": 25.0,
+        "kcal_floor": 1500.0,
+        "rationale": [
+          "Áp dụng quy tắc: NEED_T2D",
+          "Tỷ lệ macro theo: kiem_soat_duong_huyet",
+          "Sàn năng lượng (male): 1500 kcal"
+        ]
+      },
+      "prompt_line": "- Mục tiêu/ngày: None kcal, Đạm Noneg, Béo Noneg, Carb Noneg, Natri <= Nonemg, Chất xơ >= Noneg.",
+      "chat_bmi": 346.9,
+      "expected_bmi": 24.2
+    },
+    "chat_trace_mask": {
+      "message": "Tên giả kiểm thử: NGUOI_GIA_LAP_QA; mã giả QA_PRIVATE_123; thích rau xanh"
+    },
+    "age_zero": {
+      "http": 422,
+      "body": {
+        "detail": [
+          {
+            "type": "greater_than_equal",
+            "loc": [
+              "body",
+              "age"
+            ],
+            "msg": "Input should be greater than or equal to 1",
+            "input": 0,
+            "ctx": {
+              "ge": 1
+            }
+          }
+        ]
+      }
+    },
+    "days_eight": {
+      "http": 422,
+      "body": {
+        "detail": [
+          {
+            "type": "less_than_equal",
+            "loc": [
+              "body",
+              "days"
+            ],
+            "msg": "Input should be less than or equal to 7",
+            "input": 8,
+            "ctx": {
+              "le": 7
+            }
+          }
+        ]
+      }
+    },
+    "preferences501": {
+      "http": 422,
+      "body": {
+        "detail": [
+          {
+            "type": "string_too_long",
+            "loc": [
+              "body",
+              "preferences_text"
+            ],
+            "msg": "String should have at most 500 characters",
+            "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ctx": {
+              "max_length": 500
+            }
+          }
+        ]
+      }
+    },
+    "validation_audit": {
+      "total_requests": 2,
+      "validation_events": [],
+      "all_validation_event_count": 0
+    },
+    "chat_block": {
+      "tier": "hard_block",
+      "saved_guardrail_count": 1,
+      "dashboard_guardrail_count": 2
+    },
+    "condition_filter": {
+      "htn_plan_id": 3,
+      "htn_plan_in_t2d_filter": true
+    }
+  }
+}

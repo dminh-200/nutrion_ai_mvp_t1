@@ -1,0 +1,19 @@
+{
+  "mode": "mock/direct",
+  "isolated_db": "C:\\Users\\Admin\\AppData\\Local\\Temp\\nutriai-review-8qp3u6cx",
+  "checks": {},
+  "precondition_failed": {
+    "expected": "pending_review",
+    "actual": "needs_human_review",
+    "violations": [
+      {
+        "code": "MACRO_OUT_OF_RANGE",
+        "message_vi": "Ngày 1: Béo đạt 48.5g (thiếu 44.4g, lệch 47.8% so với mục tiêu 92.9g, ngưỡng ±15%).",
+        "day": 1,
+        "meal": null,
+        "food_id": null
+      }
+    ],
+    "note": "Nguồn hiện tại chưa tạo được mock menu hợp lệ; không chạy chuỗi duyệt."
+  }
+}

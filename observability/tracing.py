@@ -63,6 +63,13 @@ def mask_sensitive_data(data: Any, *, extra_secrets: tuple[str, ...] = ()) -> An
                 raw_txt = "" if v is None else str(v)
                 out["preferences_length"] = len(raw_txt)
                 continue
+            if key_str in ("message", "user_message", "raw_message"):
+                raw_msg = "" if v is None else str(v)
+                out[f"{key_str}_length"] = len(raw_msg)
+                continue
+            if key_str == "history" and isinstance(v, list):
+                out["history_turns"] = len(v)
+                continue
             out[key_str] = mask_sensitive_data(v, extra_secrets=extra_secrets)
         return out
 

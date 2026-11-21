@@ -59,6 +59,7 @@ class _MCPSessionRunner:
         params = StdioServerParameters(
             command=sys.executable,
             args=["-m", "mcp_server.server"],
+            env=os.environ.copy(),
         )
         # Chuyển stderr của subprocess MCP sang DEVNULL để tránh đầy buffer pipe trên Windows.
         errlog_file = open(os.devnull, "w", encoding="utf-8")

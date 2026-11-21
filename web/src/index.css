@@ -1,0 +1,138 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Be Vietnam Pro", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-canvas: #F6F8F5;
+  --color-surface: #FFFFFF;
+  --color-border-soft: #E4ECE8;
+  --color-teal-deep: #0B4F4A;
+  --color-teal-deep-hover: #083D39;
+  --color-teal-accent: #0D9488;
+  --color-teal-luminous: #14B8A6;
+  --color-teal-tint: #F0FDFA;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    color: #0F172A;
+    background-color: #F4FAF8;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: #F4FAF8;
+    background-image:
+      radial-gradient(760px 420px at 6% 0%, rgba(20, 184, 166, 0.14), transparent 72%),
+      radial-gradient(680px 420px at 95% 4%, rgba(56, 189, 248, 0.12), transparent 70%),
+      radial-gradient(620px 380px at 52% 100%, rgba(16, 185, 129, 0.08), transparent 74%),
+      linear-gradient(180deg, #F3FAF8 0%, #F6F8F5 48%, #F2F9F7 100%);
+    background-attachment: fixed;
+    color: #0F172A;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  [role="button"]:focus-visible,
+  [tabindex]:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px #FFFFFF, 0 0 0 4px rgba(13, 148, 136, 0.35);
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.glass-surface {
+  background-color: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(212, 232, 224, 0.88);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 1px 2px rgba(11, 79, 74, 0.04),
+    0 10px 28px rgba(11, 79, 74, 0.065);
+}
+
+.glass-navbar {
+  background-color: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(208, 230, 222, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 8px 30px rgba(11, 79, 74, 0.08);
+}
+
+.hero-luminous {
+  background:
+    radial-gradient(460px 220px at 96% 0%, rgba(20, 184, 166, 0.13), transparent 70%),
+    radial-gradient(360px 200px at 8% 100%, rgba(56, 189, 248, 0.09), transparent 72%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.92) 0%, rgba(240, 253, 250, 0.88) 58%, rgba(224, 242, 254, 0.78) 100%);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(196, 228, 218, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 10px 30px rgba(11, 79, 74, 0.07);
+}
+
+.ambient-teal-card {
+  background-image:
+    radial-gradient(420px 200px at 100% 0%, rgba(20, 184, 166, 0.1), transparent 70%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(240, 253, 250, 0.86) 100%);
+}
+
+.btn-sheen {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-120%) skewX(-20deg);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.28) 50%,
+    transparent 100%
+  );
+  transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.btn-sheen:hover::after {
+  transform: translateX(120%) skewX(-20deg);
+}
+
+@keyframes clinicalShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.clinical-skeleton {
+  background: linear-gradient(90deg, #E6F0EC 25%, #F4FAF8 50%, #E6F0EC 75%);
+  background-size: 200% 100%;
+  animation: clinicalShimmer 1.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clinical-skeleton {
+    animation: none;
+  }
+  .btn-sheen::after {
+    display: none;
+  }
+}

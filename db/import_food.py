@@ -3,12 +3,12 @@
 import csv
 from pathlib import Path
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, delete, select
 from sqlalchemy.orm import Session
 from unidecode import unidecode
 
 from db.init_db import init_db
-from db.models import Food, FoodNutrient
+from db.models import Food, FoodNutrient, MealPlanItem
 from db.session import get_engine
 
 PRIMARY_FOOD_CSV = Path("data/food.csv")
@@ -171,6 +171,21 @@ def import_food_csv(
                 nutrient.sodium_mg = sodium_mg
                 nutrient.sat_fat_g = sat_fat_g
 
+        removed_samples = 0
+        if not is_sample:
+            referenced_ids = set(session.scalars(select(MealPlanItem.food_id)).all())
+            stale_samples = [
+                f
+                for f in session.scalars(
+                    select(Food).where(Food.source.contains("SAMPLE_DATA"))
+                ).all()
+                if f.id not in referenced_ids
+            ]
+            for stale in stale_samples:
+                session.execute(delete(FoodNutrient).where(FoodNutrient.food_id == stale.id))
+                session.delete(stale)
+                removed_samples += 1
+
         session.commit()
 
     return {
@@ -179,6 +194,7 @@ def import_food_csv(
         "total_rows": len(rows),
         "inserted": inserted,
         "updated": updated,
+        "removed_samples": removed_samples,
         "errors": errors,
         "warnings": warnings,
     }

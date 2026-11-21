@@ -212,3 +212,72 @@ def test_adjust_portions_rebalances_macro_skew_without_changing_food_ids() -> No
     orig_ids = [it.food_id for m in plan.days[0].meals for it in m.items]
     new_ids = [it.food_id for m in adjusted.days[0].meals for it in m.items]
     assert new_ids == orig_ids
+
+
+def test_adjust_portions_respects_realistic_seed_and_meat_bounds() -> None:
+    """Hạt chia (unit=15g) không vượt 30g/bữa và thịt/cá chính không bị cắt dưới 50g."""
+    realistic_db = [
+        {
+            "id": 1,
+            "name_vi": "Cơm gạo lứt",
+            "food_group": "ngu_coc",
+            "unit_default_g": 150.0,
+            "kcal": 120.6,
+            "protein_g": 3.1,
+            "fat_g": 1.0,
+            "carb_g": 24.8,
+            "fiber_g": 2.2,
+            "sugar_g": 0.2,
+            "sodium_mg": 5.0,
+            "tags": "tinh_bot",
+        },
+        {
+            "id": 2,
+            "name_vi": "Ức gà bỏ da luộc/hấp",
+            "food_group": "thit_gia_cam",
+            "unit_default_g": 120.0,
+            "kcal": 141.4,
+            "protein_g": 29.5,
+            "fat_g": 2.6,
+            "carb_g": 0.0,
+            "fiber_g": 0.0,
+            "sugar_g": 0.0,
+            "sodium_mg": 65.0,
+            "tags": "dam_nac",
+        },
+        {
+            "id": 3,
+            "name_vi": "Hạt chia khô",
+            "food_group": "dau_mo_hat",
+            "unit_default_g": 15.0,
+            "kcal": 510.7,
+            "protein_g": 16.5,
+            "fat_g": 30.7,
+            "carb_g": 42.1,
+            "fiber_g": 34.4,
+            "sugar_g": 0.0,
+            "sodium_mg": 16.0,
+            "tags": "chat_beo_tot",
+        },
+    ]
+    plan = MealPlanLLM(
+        days=[
+            DayPlan(
+                day=1,
+                meals=[
+                    Meal(
+                        meal="lunch",
+                        items=[
+                            PlannedItem(food_id=1, grams=150.0),
+                            PlannedItem(food_id=2, grams=15.0),
+                            PlannedItem(food_id=3, grams=105.0),
+                        ],
+                    )
+                ],
+            )
+        ]
+    )
+    adjusted, _ = adjust_portions(plan, _targets(1340.0), food_db=realistic_db)
+    items_by_id = {it.food_id: it.grams for it in adjusted.days[0].meals[0].items}
+    assert items_by_id[3] <= 30.0
+    assert items_by_id[2] >= 50.0

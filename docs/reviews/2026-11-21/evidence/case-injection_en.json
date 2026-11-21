@@ -1,0 +1,43 @@
+{
+  "status": "blocked",
+  "meal_plan_id": 669,
+  "thread_id": "thread-a14b62f5d2b5",
+  "session_id": "sess-fd2671dca23e",
+  "trace_id": "b738a9f7658dce31438c1e6165401493",
+  "retry_count": 0,
+  "input_flags": [
+    "injection"
+  ],
+  "output_flags": [],
+  "risk": {
+    "high_risk": false,
+    "reasons": [],
+    "message_vi": ""
+  },
+  "targets": null,
+  "needs": null,
+  "items": [],
+  "daily_totals": [],
+  "violations": [],
+  "snippets": [],
+  "explanation_md": "**Yêu cầu bị từ chối:** Phát hiện nội dung không hợp lệ hoặc cố tình vượt qua quy tắc an toàn.\n\n---\n*Lưu ý: Thực đơn chỉ mang tính tham khảo hỗ trợ dinh dưỡng, không thay thế chẩn đoán hoặc chỉ định điều trị của bác sĩ.*",
+  "metrics": {
+    "llm_calls": 0,
+    "tokens_in": 0,
+    "tokens_out": 0,
+    "latency_ms": 67.68,
+    "model_usage": {},
+    "est_cost_usd": 0.0,
+    "est_cost_if_paid_usd": 0.0
+  },
+  "execution": {
+    "api_attempts": 0,
+    "cache_hits": 0,
+    "mock_calls": 0
+  },
+  "trace_notes": [
+    "intake: nhận hồ sơ QA_DEMO_injection_en",
+    "input_guardrail: chặn yêu cầu (injection)",
+    "finalize: hoàn tất với status=blocked, meal_plan_id=669"
+  ]
+}

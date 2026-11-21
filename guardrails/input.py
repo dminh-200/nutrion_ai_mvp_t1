@@ -28,6 +28,7 @@ from core.nutrition import calc_bmi
 from core.schemas import PatientProfile, RiskResult
 from db.repo import create_guardrail_event
 from db.session import get_engine
+from observability.execution import record_execution
 from observability.tracing import trace_llm_generation
 
 DEFAULT_GUARDRAILS_PATH = Path("config/guardrails.yaml")
@@ -309,6 +310,7 @@ def run_safety_classifier_llm(
             metadata={"safety_llm": "on"},
             settings=cfg_settings,
         ) as gen:
+            record_execution("api")
             response = active_client.models.generate_content(
                 model=cfg_settings.GEMINI_LIGHT_MODEL,
                 contents=prompt,

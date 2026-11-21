@@ -12,6 +12,55 @@ def _round_to_5(value: float) -> float:
     return float(round(value / 5.0) * 5)
 
 
+def _item_grams_bounds(
+    food: dict[str, Any] | None,
+    grams_min: float,
+    grams_max: float,
+) -> tuple[float, float]:
+    """Xác định khoảng gram thực tế theo nhóm thực phẩm và unit_default_g."""
+    if not food or "food_group" not in food:
+        return grams_min, grams_max
+
+    grp = str(food.get("food_group") or "").strip().lower()
+    unit_g = float(food.get("unit_default_g") or 100.0)
+    tags = str(food.get("tags") or "").lower()
+    fat_g = float(food.get("fat_g") or 0.0)
+
+    lo = grams_min
+    hi = grams_max
+
+    if grp in ("dau_mo_hat", "dau_hat"):
+        if fat_g >= 80.0:
+            hi = min(hi, 20.0)
+        elif unit_g <= 15.0:
+            hi = min(hi, 30.0)
+        elif unit_g <= 25.0:
+            hi = min(hi, 40.0)
+        else:
+            hi = min(hi, max(50.0, unit_g * 2.0))
+    elif grp in ("thit_gia_cam", "thuy_hai_san", "thit_ca"):
+        if "che_bien_san" in tags or unit_g <= 60.0:
+            hi = min(hi, max(60.0, unit_g * 2.0))
+        else:
+            lo = max(lo, 50.0)
+            hi = min(hi, 250.0)
+    elif grp == "mon_che_bien_gia_vi":
+        hi = min(hi, max(30.0, unit_g * 2.0))
+
+    if lo > hi:
+        lo = grams_min
+    return float(lo), float(hi)
+
+
+def _is_dry_seed_or_nut(food: dict[str, Any] | None) -> bool:
+    """Nhận diện hạt khô/hạt dinh dưỡng (hạt chia, lạc, hạnh nhân, óc chó...)."""
+    if not food:
+        return False
+    grp = str(food.get("food_group") or "").strip().lower()
+    fat_g = float(food.get("fat_g") or 0.0)
+    return grp == "dau_hat" or (grp == "dau_mo_hat" and fat_g < 80.0)
+
+
 def _score_day(day_plan: DayPlan, food_map: dict[int, dict[str, Any]]) -> dict[str, float]:
     """Tính tổng dinh dưỡng một ngày từ food_map khớp quy tắc làm tròn của score_menu."""
     totals = {
@@ -22,6 +71,7 @@ def _score_day(day_plan: DayPlan, food_map: dict[int, dict[str, Any]]) -> dict[s
         "fiber_g": 0.0,
         "sugar_g": 0.0,
         "sodium_mg": 0.0,
+        "seed_g": 0.0,
     }
     for meal in day_plan.meals:
         for item in meal.items:
@@ -29,10 +79,33 @@ def _score_day(day_plan: DayPlan, food_map: dict[int, dict[str, Any]]) -> dict[s
             if food is None:
                 continue
             ratio = item.grams / 100.0
-            for key in totals:
+            for key in ("kcal", "protein_g", "fat_g", "carb_g", "fiber_g", "sugar_g", "sodium_mg"):
                 val = round(float(food.get(key) or 0.0) * ratio, 1)
                 totals[key] = round(totals[key] + val, 1)
+            if _is_dry_seed_or_nut(food):
+                totals["seed_g"] = round(totals["seed_g"] + float(item.grams), 1)
     return totals
+
+
+def _meal_kcal_shares(
+    day_plan: DayPlan,
+    food_map: dict[int, dict[str, Any]],
+) -> dict[str, float]:
+    """Tính tỷ trọng năng lượng (%) của từng bữa trong ngày."""
+    by_meal: dict[str, float] = {}
+    total = 0.0
+    for meal in day_plan.meals:
+        mk = 0.0
+        for item in meal.items:
+            food = food_map.get(int(item.food_id))
+            if food is None:
+                continue
+            mk += round(float(food.get("kcal") or 0.0) * (item.grams / 100.0), 1)
+        by_meal[meal.meal] = by_meal.get(meal.meal, 0.0) + mk
+        total += mk
+    if total <= 0:
+        return {}
+    return {m: k / total for m, k in by_meal.items()}
 
 
 def _macros_consistent_with_kcal(targets: NutritionTargets) -> bool:
@@ -53,8 +126,9 @@ def _day_is_compliant(
     floor_applies: bool,
     check_macros: bool,
     fiber_floor: float = 0.0,
+    meal_shares: dict[str, float] | None = None,
 ) -> bool:
-    """Kiểm tra ngày ăn đã đạt kcal, sàn năng lượng, xơ và macro trong ngưỡng chưa."""
+    """Kiểm tra ngày ăn đã đạt sát mục tiêu kcal, sàn năng lượng, xơ, bữa ăn và macro chưa."""
     if floor_applies and tot["kcal"] < targets.kcal_floor:
         return False
     if targets.target_kcal > 0:
@@ -67,6 +141,14 @@ def _day_is_compliant(
                 return False
     if fiber_floor > 0 and tot["fiber_g"] < fiber_floor - 1e-9:
         return False
+    if targets.sugar_max_g is not None and tot["sugar_g"] > float(targets.sugar_max_g) + 1e-9:
+        return False
+    if tot["fiber_g"] > 45.0 or tot.get("seed_g", 0.0) > 35.0:
+        return False
+    if meal_shares and all(m in meal_shares for m in ("breakfast", "lunch", "dinner")):
+        for m in ("breakfast", "lunch", "dinner"):
+            if meal_shares[m] < 0.18 or meal_shares[m] > 0.48:
+                return False
     return True
 
 
@@ -78,8 +160,9 @@ def _day_loss(
     floor_applies: bool,
     optimize_macros: bool,
     fiber_floor: float = 0.0,
+    meal_shares: dict[str, float] | None = None,
 ) -> float:
-    """Hàm mục tiêu ưu tiên kéo ngày ăn vượt sàn, đúng khoảng kcal, cân macro và đủ chất xơ."""
+    """Hàm mục tiêu kéo ngày ăn vượt sàn, sát tâm kcal/macro, đủ xơ không quá tải và cân bữa."""
     kcal = tot["kcal"]
     target_k = targets.target_kcal
     loss = 0.0
@@ -98,7 +181,7 @@ def _day_loss(
             loss += 300.0 * ((kcal_min - kcal) / target_k + 0.01)
         elif kcal > kcal_max:
             loss += 300.0 * ((kcal - kcal_max) / target_k + 0.01)
-        loss += ((kcal - target_k) / target_k) ** 2
+        loss += 2.0 * (((kcal - target_k) / target_k) ** 2)
 
     if optimize_macros:
         for field in ("protein_g", "fat_g", "carb_g"):
@@ -108,10 +191,26 @@ def _day_loss(
             rel = abs(tot[field] - t_val) / t_val
             if rel > macro_tol:
                 loss += 150.0 * ((rel - macro_tol) + 0.01)
-            loss += rel**2
+            weight = 2.0 if (field == "carb_g" and tot[field] > t_val) else 1.2
+            loss += weight * (rel**2)
 
     if fiber_floor > 0 and tot["fiber_g"] < fiber_floor:
         loss += 100.0 * ((fiber_floor - tot["fiber_g"]) / fiber_floor + 0.01)
+    if targets.sugar_max_g is not None and tot["sugar_g"] > float(targets.sugar_max_g):
+        sg_max = max(float(targets.sugar_max_g), 1.0)
+        loss += 250.0 * ((tot["sugar_g"] - sg_max) / sg_max + 0.01)
+    if tot["fiber_g"] > 45.0:
+        loss += 80.0 * ((tot["fiber_g"] - 45.0) / 45.0 + 0.01)
+    if tot.get("seed_g", 0.0) > 35.0:
+        loss += 200.0 * ((tot["seed_g"] - 35.0) / 35.0 + 0.01)
+
+    if meal_shares and all(m in meal_shares for m in ("breakfast", "lunch", "dinner")):
+        for m in ("breakfast", "lunch", "dinner"):
+            sh = meal_shares[m]
+            if sh < 0.18:
+                loss += 120.0 * ((0.18 - sh) + 0.01)
+            elif sh > 0.48:
+                loss += 120.0 * ((sh - 0.48) + 0.01)
 
     return loss
 
@@ -162,19 +261,32 @@ def _refine_day_portions(
         fiber_floor if (fiber_floor > 0 and max_possible_fiber >= fiber_floor) else 0.0
     )
 
+    tight_kcal_tol = min(tol_pct, 0.05)
+    tight_macro_tol = min(macro_tol, 0.08)
+
     cur_tot = _score_day(day_plan, food_map)
+    cur_shares = _meal_kcal_shares(day_plan, food_map)
     if _day_is_compliant(
         cur_tot,
         targets,
-        tol_pct,
-        macro_tol,
+        tight_kcal_tol,
+        tight_macro_tol,
         floor_applies,
         optimize_macros,
         fiber_floor=active_fiber_floor,
+        meal_shares=cur_shares,
     ):
         return False
 
+    # Kẹp trước các món vượt trần nhóm thực phẩm (vd: hạt chia > 30g -> kẹp về 30g)
     changed = False
+    for it in items:
+        lo_g, hi_g = _item_grams_bounds(food_map.get(int(it.food_id)), grams_min, grams_max)
+        clamped = _round_to_5(max(lo_g, min(hi_g, it.grams)))
+        if clamped != it.grams:
+            it.grams = clamped
+            changed = True
+
     single_steps = (-20.0, 20.0, -10.0, 10.0, -5.0, 5.0)
     pair_steps = (
         (-5.0, 5.0),
@@ -190,16 +302,18 @@ def _refine_day_portions(
         (20.0, -5.0),
     )
 
-    for _ in range(45):
+    for _ in range(55):
         cur_tot = _score_day(day_plan, food_map)
+        cur_shares = _meal_kcal_shares(day_plan, food_map)
         if _day_is_compliant(
             cur_tot,
             targets,
-            tol_pct,
-            macro_tol,
+            tight_kcal_tol,
+            tight_macro_tol,
             floor_applies,
             optimize_macros,
             fiber_floor=active_fiber_floor,
+            meal_shares=cur_shares,
         ):
             break
 
@@ -211,15 +325,17 @@ def _refine_day_portions(
             floor_applies,
             optimize_macros,
             fiber_floor=active_fiber_floor,
+            meal_shares=cur_shares,
         )
         best_loss = cur_loss
         best_action: tuple[int, float, int | None, float] | None = None
 
         for idx, item in enumerate(items):
             orig = item.grams
+            lo_g, hi_g = _item_grams_bounds(food_map.get(int(item.food_id)), grams_min, grams_max)
             for delta in single_steps:
                 cand_g = _round_to_5(orig + delta)
-                if cand_g < grams_min or cand_g > grams_max or cand_g == orig:
+                if cand_g < lo_g or cand_g > hi_g or cand_g == orig:
                     continue
                 item.grams = cand_g
                 cand_tot = _score_day(day_plan, food_map)
@@ -232,6 +348,7 @@ def _refine_day_portions(
                         floor_applies,
                         optimize_macros,
                         fiber_floor=active_fiber_floor,
+                        meal_shares=_meal_kcal_shares(day_plan, food_map),
                     )
                     if cand_loss < best_loss - 1e-9:
                         best_loss = cand_loss
@@ -241,18 +358,24 @@ def _refine_day_portions(
         if best_action is None and len(items) >= 2:
             for i, item_i in enumerate(items):
                 orig_i = item_i.grams
+                lo_i, hi_i = _item_grams_bounds(
+                    food_map.get(int(item_i.food_id)), grams_min, grams_max
+                )
                 for j, item_j in enumerate(items):
                     if i == j:
                         continue
                     orig_j = item_j.grams
+                    lo_j, hi_j = _item_grams_bounds(
+                        food_map.get(int(item_j.food_id)), grams_min, grams_max
+                    )
                     for d_i, d_j in pair_steps:
                         cand_i = _round_to_5(orig_i + d_i)
                         cand_j = _round_to_5(orig_j + d_j)
                         if (
-                            cand_i < grams_min
-                            or cand_i > grams_max
-                            or cand_j < grams_min
-                            or cand_j > grams_max
+                            cand_i < lo_i
+                            or cand_i > hi_i
+                            or cand_j < lo_j
+                            or cand_j > hi_j
                             or (cand_i == orig_i and cand_j == orig_j)
                         ):
                             continue
@@ -268,6 +391,7 @@ def _refine_day_portions(
                                 floor_applies,
                                 optimize_macros,
                                 fiber_floor=active_fiber_floor,
+                                meal_shares=_meal_kcal_shares(day_plan, food_map),
                             )
                             if cand_loss < best_loss - 1e-9:
                                 best_loss = cand_loss
@@ -333,8 +457,11 @@ def adjust_portions(
             k = aim_kcal / actual_kcal
             for meal in day_plan.meals:
                 for item in meal.items:
+                    lo_g, hi_g = _item_grams_bounds(
+                        food_map.get(int(item.food_id)), grams_min, grams_max
+                    )
                     new_grams = _round_to_5(item.grams * k)
-                    new_grams = max(grams_min, min(grams_max, new_grams))
+                    new_grams = max(lo_g, min(hi_g, new_grams))
                     if new_grams != item.grams:
                         item.grams = new_grams
                         changed = True

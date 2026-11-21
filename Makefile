@@ -1,4 +1,4 @@
-.PHONY: setup init-db import-food seed ingest mcp-dev run test test-fast test-mcp eval eval-rag check-rules lint
+.PHONY: setup init-db import-food seed ingest mcp-dev run api-dev web-install web-dev web-build test test-fast test-mcp test-api eval eval-rag check-rules lint
 
 PYTHON := .venv/Scripts/python
 PYTEST := .venv/Scripts/pytest
@@ -26,6 +26,18 @@ mcp-dev:
 run:
 	$(PYTHON) -m streamlit run app/main.py
 
+api-dev:
+	$(PYTHON) -m uvicorn api.main:app --host 127.0.0.1 --port 8000 --reload
+
+web-install:
+	cd web && npm.cmd install
+
+web-dev:
+	cd web && npm.cmd run dev
+
+web-build:
+	cd web && npm.cmd run build
+
 test:
 	$(PYTHON) -m pytest -q -m "not slow"
 
@@ -34,6 +46,9 @@ test-fast:
 
 test-mcp:
 	$(PYTHON) -m pytest -q -m mcp
+
+test-api:
+	$(PYTHON) -m pytest -q tests/test_api.py tests/test_backend_bugfixes.py
 
 eval:
 	$(PYTHON) -m evals.run_eval

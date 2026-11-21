@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 280" role="img" aria-label="Minh họa rau củ trên bàn bếp">
+  <defs>
+    <pattern id="grid" width="22" height="22" patternUnits="userSpaceOnUse">
+      <path d="M22 0H0v22" fill="none" stroke="#fffaf1" stroke-opacity=".48"/>
+    </pattern>
+    <linearGradient id="paper" x2="1" y2="1">
+      <stop stop-color="#f1d8b9"/><stop offset="1" stop-color="#e9b788"/>
+    </linearGradient>
+  </defs>
+  <rect width="440" height="280" rx="24" fill="url(#paper)"/>
+  <rect width="440" height="280" rx="24" fill="url(#grid)"/>
+  <g transform="translate(248 141) rotate(-14)">
+    <rect x="-80" y="-110" width="160" height="220" rx="22" fill="#ad7253" opacity=".25" transform="translate(9 8)"/>
+    <rect x="-80" y="-110" width="160" height="220" rx="22" fill="#fff9e9"/>
+    <rect x="-69" y="-99" width="138" height="198" rx="15" fill="none" stroke="#e5c9a5" stroke-width="2"/>
+    <circle cy="-84" r="6" fill="#d7b18c"/>
+    <path d="M-28-39C-88-73-75-6-36 24c-19 12 5 48 35 15C32 11 24-34-28-39z" fill="#4d8362"/>
+    <path d="M-33 46c4-45 9-62 1-80m0 39-28-28m26 43 38-26" fill="none" stroke="#cad6a0" stroke-width="3" stroke-linecap="round"/>
+    <path d="M36-27C11-52-12-14 1 14c9 18 19 49 30 53 13-5 23-44 29-66 6-23-7-40-24-28z" fill="#d96743"/>
+    <path d="m35-22-15-5 12-19 4 13 15-4-10 12 12 8z" fill="#3c7053"/>
+    <path d="M19-8c-5 12-2 27 5 39" fill="none" stroke="#f69c73" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(96 158) rotate(16)">
+    <path d="M-50 0a50 49 0 1 0 100 0 50 49 0 1 0-100 0" fill="#b67b5c" opacity=".28" transform="translate(6 8)"/>
+    <circle r="50" fill="#f9f4dc"/><circle r="42" fill="#edbc4c"/>
+    <path d="M0-39V39M-39 0H39M-27-27l54 54m0-54-54 54" stroke="#fff2b8" stroke-width="3"/>
+    <circle r="5" fill="#fff2b8"/>
+  </g>
+  <path d="M338 73c16-29 54-37 62-15-1 31-37 33-59 27 3 19-4 36-19 45-12-24-4-45 16-57z" fill="#477b66"/>
+  <path d="M321 128c13-35 41-59 65-64" fill="none" stroke="#b1c297" stroke-width="3" stroke-linecap="round"/>
+  <g fill="#fff9ed"><circle cx="55" cy="63" r="5"/><circle cx="369" cy="204" r="7"/><circle cx="386" cy="220" r="4"/><circle cx="117" cy="67" r="3"/></g>
+</svg>

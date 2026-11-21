@@ -1,0 +1,58 @@
+[
+  {
+    "Path": "E:\\Các project AI\\nutrion_ai_mvp\\agent\\nodes.py",
+    "Hash": "972A9F9485370CA4A7BB4C48317354A717785D1FFF9BC21A85A4D03C68269A01"
+  },
+  {
+    "Path": "E:\\Các project AI\\nutrion_ai_mvp\\agent\\chat.py",
+    "Hash": "D69DA49D05C34895F4C8DE25345ABEFF39AEFB8F5F75BC171982B1BFFAEAAB1F"
+  },
+  {
+    "Path": "E:\\Các project AI\\nutrion_ai_mvp\\agent\\verifier.py",
+    "Hash": "E61056902934879728EE53E69002BA4A20788D59E94BE0119BA1DCBA76105DD3"
+  },
+  {
+    "Path": "E:\\Các project AI\\nutrion_ai_mvp\\agent\\prompts.py",
+    "Hash": "2DD293492AE0C009B235B2131F613E84125B926538DDC4B8613B3C4CC019565A"
+  },
+  {
+    "Path": "E:\\Các project AI\\nutrion_ai_mvp\\core\\food.py",
+    "Hash": "53BF51945DA3B60E7B4323DB43AAEF3B328604D4D6972E85A1713FC84DB5DF8A"
+  },
+  {
+    "Path": "E:\\Các project AI\\nutrion_ai_mvp\\core\\portion.py",
+    "Hash": "A3CD92D6F2896FB9F3F91B61F473567C01FAE44FC120108680449D83271A4863"
+  },
+  {
+    "Path": "E:\\Các project AI\\nutrion_ai_mvp\\data\\food.csv",
+    "Hash": "226556DA8FE6C117A2471EC372E481CECCCA1BC9CF7E9EFD7313C823DE9CCA7E"
+  },
+  {
+    "Path": "E:\\Các project AI\\nutrion_ai_mvp\\db\\import_food.py",
+    "Hash": "2C7E104766ACACEE7963FDA54E5DC9F12AB5ED2A9DEFAE914204A92DA8F90FF8"
+  },
+  {
+    "Path": "E:\\Các project AI\\nutrion_ai_mvp\\db\\repo.py",
+    "Hash": "7A6D1D92D33423BF85C978C0708AE504B65B83D9EF7D349D3848A3926A00FB08"
+  },
+  {
+    "Path": "E:\\Các project AI\\nutrion_ai_mvp\\api\\routes\\reviews.py",
+    "Hash": "50B3A5E6308DC147387EE5098EB27B7D724387D4C1D17E300C7BE9786B27ABAE"
+  },
+  {
+    "Path": "E:\\Các project AI\\nutrion_ai_mvp\\web\\src\\App.tsx",
+    "Hash": "74F14CFDB07DB2694E21CB81787872F4B4A80D1E8F57C167C70FBE8061A8CF6E"
+  },
+  {
+    "Path": "E:\\Các project AI\\nutrion_ai_mvp\\web\\src\\pages\\ReviewPage.tsx",
+    "Hash": "D43246F0474EA09112B00E868296E6C73284FAA798AF686F133EA07C50E69CB8"
+  },
+  {
+    "Path": "E:\\Các project AI\\nutrion_ai_mvp\\web\\src\\pages\\ResultPage.tsx",
+    "Hash": "6ABE1F1AA25E7BB3D1C7F7A4B483DC437276DB2C7318FF831D9AFEB1B99FBEC5"
+  },
+  {
+    "Path": "E:\\Các project AI\\nutrion_ai_mvp\\web\\src\\pages\\ChatPage.tsx",
+    "Hash": "29221BB1270F3674BA74D6F3BE73A17D645D21B05D760E64AFFB37FBEFBFB56A"
+  }
+]

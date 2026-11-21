@@ -1,0 +1,19 @@
+flowchart TD
+    UI["Tầng Giao diện (Streamlit 4 trang)<br/>app/main.py, app/pages/*"] -->|"run_request / resume_review / get_graph_mermaid"| AGENT["Tầng Điều phối (LangGraph 11 node)<br/>agent/graph.py, agent/nodes.py"]
+
+    AGENT -->|"Kiểm tra đầu vào / đầu ra"| GUARD["Tầng Guardrails<br/>guardrails/input.py, guardrails/output.py"]
+    AGENT -->|"Span, Generation, Score, QueryLog"| OBS["Tầng Observability<br/>observability/tracing.py (Langfuse v5)<br/>observability/querylog.py"]
+    AGENT -->|"Structured Output / Explain"| LLM["Tầng LLM<br/>agent/llm.py (Gemini / Alibaba / Groq / Mock)"]
+    AGENT -->|"Cân chỉnh & Kiểm chứng"| VERIFY["Core Portion & Verifier<br/>core/portion.py, agent/verifier.py"]
+
+    AGENT -->|"TOOLS_MODE=mcp (stdio) | direct"| GW["ToolsGateway<br/>agent/tools_gateway.py"]
+    GW -->|"MCP Python SDK v2 (5 tools)"| MCP["MCP Server<br/>mcp_server/server.py"]
+    MCP --> CORE["Tầng Nghiệp vụ Lõi (Hàm thuần)<br/>core/nutrition.py, classify.py, food.py, allergen.py, scoring.py"]
+    MCP --> RAG["Tầng Tri thức (RAG)<br/>rag/retrieve.py, ingest.py, embeddings.py"]
+    GW -.->|"direct mode"| CORE
+    GW -.->|"direct mode"| RAG
+
+    CORE --> DB[("SQLite + SQLAlchemy 2.x<br/>db/nutrition.db & checkpoints.sqlite")]
+    RAG --> CHROMA[("ChromaDB PersistentClient<br/>rag/chroma/")]
+    GUARD --> CFG["Cấu hình YAML & .env<br/>config/*.yaml, config/settings.py"]
+    CORE --> CFG

@@ -48,6 +48,21 @@ STATUS_MAP = {
     "draft": "Bản nháp",
 }
 
+RISK_REASON_MAP = {
+    "RISK_PREG": "Đang mang thai",
+    "RISK_LACT": "Đang cho con bú",
+    "RISK_MINOR": "Chưa đủ tuổi trưởng thành",
+    "RISK_CKD": "Bệnh thận mạn hoặc đang chạy thận",
+    "RISK_ED": "Có tiền sử rối loạn ăn uống",
+    "RISK_BMI_LOW": "Chỉ số BMI dưới mức an toàn",
+    "RISK_TEXT": "Ghi chú sức khỏe cần bác sĩ đánh giá",
+}
+
+
+def format_risk_reason(code: str) -> str:
+    """Đổi mã nguy cơ nội bộ thành lời giải thích cho người dùng."""
+    return RISK_REASON_MAP.get(code, "Tình trạng sức khỏe cần tư vấn trực tiếp")
+
 
 def format_condition(code: str) -> str:
     """Chuyển mã bệnh lý sang tiếng Việt thân thiện."""
@@ -74,6 +89,23 @@ def format_status(status: str) -> str:
     return STATUS_MAP.get(status.lower().strip(), status)
 
 
+def execution_summary(execution: dict[str, Any] | None) -> str:
+    """Mô tả nguồn kết quả dựa trên các sự kiện thực thi đã ghi nhận."""
+    if execution is None:
+        return "Nguồn kết quả: Bản ghi cũ chưa có thông tin lượt gửi API."
+    api = int(execution.get("api_attempts", 0))
+    cache = int(execution.get("cache_hits", 0))
+    mock = int(execution.get("mock_calls", 0))
+    parts = [f"Đã gửi API mới: {api} lượt" if api else "Không gửi API mới"]
+    if cache:
+        parts.append(f"Dùng cache: {cache} lượt")
+    if mock:
+        parts.append(f"Giả lập: {mock} lượt")
+    if not (api or cache or mock):
+        parts.append("Xử lý bằng quy tắc, chưa chạy mô hình")
+    return "Nguồn kết quả: " + " · ".join(parts)
+
+
 def init_session_state() -> None:
     """Khởi tạo các khóa cần thiết trong st.session_state."""
     defaults: dict[str, Any] = {
@@ -94,11 +126,57 @@ def inject_custom_css() -> None:
     """Tiêm CSS tùy biến theo chuẩn Health-Tech / Clinical Dashboard hiện đại."""
     css = """
     <style>
+    .stApp {
+        background: #F5F7FB;
+    }
+    [data-testid="stMainBlockContainer"] {
+        max-width: 1180px;
+        padding-top: 2rem;
+        padding-bottom: 3rem;
+    }
+    [data-testid="stSidebar"] {
+        background: #EFF8F7;
+        border-right: 1px solid #D7E9E7;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        background: #FFFFFF;
+        box-shadow: 0 4px 18px rgba(15, 118, 110, 0.045);
+    }
+    [data-testid="stButton"] button[kind="primary"] {
+        background: #0D9488;
+        border-color: #0D9488;
+        border-radius: 10px;
+        font-weight: 650;
+        min-height: 2.8rem;
+    }
+    [data-testid="stButton"] button[kind="primary"]:hover {
+        background: #0F766E;
+        border-color: #0F766E;
+    }
+    [data-testid="stMain"] h4 {
+        color: #0F766E;
+        letter-spacing: -0.015em;
+    }
+    [data-testid="stMain"] p, [data-testid="stMain"] label {
+        font-size: 1rem;
+        line-height: 1.55;
+    }
+    [data-testid="stAlert"] { border-radius: 14px; }
+    [data-testid="stVerticalBlockBorderWrapper"] > div {
+        border-radius: 16px !important;
+    }
+    @media (max-width: 760px) {
+        [data-testid="stMainBlockContainer"] { padding: 1rem; }
+        .hero-banner { padding: 20px !important; }
+    }
     /* Hero Banner Gradient Teal */
     .hero-banner {
-        background: linear-gradient(135deg, #0F766E 0%, #0D9488 100%);
-        border-radius: 14px;
-        padding: 24px 30px;
+        background: radial-gradient(circle at 93% 4%, rgba(255,255,255,.24) 0 9%, transparent 9.3%),
+                    radial-gradient(circle at 87% 118%, rgba(99,220,213,.3) 0 19%,
+                                    transparent 19.3%),
+                    linear-gradient(120deg, #075F61 0%, #0D9488 64%, #2563A6 100%);
+        border-radius: 20px;
+        padding: 30px 34px;
         color: #FFFFFF;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
         margin-bottom: 24px;
@@ -107,7 +185,7 @@ def inject_custom_css() -> None:
         color: #FFFFFF !important;
         margin: 0 0 8px 0 !important;
         font-weight: 700;
-        font-size: 1.75rem;
+        font-size: 1.85rem;
     }
     .hero-banner p {
         color: #CCFBF1 !important;
@@ -138,6 +216,22 @@ def inject_custom_css() -> None:
     [data-testid="stMetricValue"] {
         color: #0F172A !important;
         font-weight: 700 !important;
+    }
+    [data-testid="stMetricValue"] > div {
+        font-size: clamp(1.45rem, 2.1vw, 2rem) !important;
+        letter-spacing: -0.04em;
+    }
+    [data-testid="stHorizontalBlock"] > div:nth-child(4n+2) [data-testid="stMetric"] {
+        border-left-color: #2563EB !important;
+        background: #F5F8FF !important;
+    }
+    [data-testid="stHorizontalBlock"] > div:nth-child(4n+3) [data-testid="stMetric"] {
+        border-left-color: #7C3AED !important;
+        background: #FAF7FF !important;
+    }
+    [data-testid="stHorizontalBlock"] > div:nth-child(4n+4) [data-testid="stMetric"] {
+        border-left-color: #EA580C !important;
+        background: #FFF8F2 !important;
     }
 
     /* Pill Badges */

@@ -59,7 +59,7 @@ with col_f3:
         key="dash_include_synthetic",
     )
     if include_synthetic:
-        st.caption("ℹ️ Đang bao gồm 200 bản ghi giả lập.")
+        st.caption("Bao gồm bản ghi giả lập khi có trong dữ liệu.")
 
 # Xử lý khoảng ngày
 has_start = isinstance(date_range, (list, tuple)) and len(date_range) > 0
@@ -79,6 +79,9 @@ kpis = dataset["kpis"]
 charts = dataset["charts"]
 logs_list = dataset["logs"]
 csv_data = dataset["csv_data"]
+
+if not kpis["total_requests"]:
+    st.info("Chưa có dữ liệu trong khoảng thời gian và bộ lọc đã chọn.")
 
 # Hiển thị các thẻ KPI
 st.markdown("#### 🏥 Chỉ Số Lâm Sàng & An Toàn Y Tế")
@@ -143,31 +146,26 @@ with col_c1:
             plot_bgcolor="rgba(0,0,0,0)",
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         )
-        st.plotly_chart(fig1, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig1, width="stretch", config={"displayModeBar": False})
 
 with col_c2:
     with st.container(border=True):
         st.markdown("##### 👥 Phân Bố Bệnh Lý Người Bệnh")
         c_chart = charts.get("condition_distribution", {})
-        fig2 = go.Figure(
-            data=[
-                go.Pie(
-                    labels=c_chart.get("labels", []),
-                    values=c_chart.get("values", []),
-                    hole=0.55,
-                    marker=dict(colors=["#0D9488", "#0284C7", "#F59E0B", "#EF4444"]),
-                    textinfo="label+percent",
-                )
-            ]
-        )
+        labels = c_chart.get("labels", [])
+        values = c_chart.get("values", [])
+        fig2 = go.Figure(go.Bar(
+            x=values, y=labels, orientation="h",
+            marker_color=["#0D9488", "#2563EB", "#7C3AED", "#F97316"],
+            text=values, textposition="auto",
+        ))
         fig2.update_layout(
-            showlegend=False,
-            height=280,
-            margin=dict(t=10, b=10, l=10, r=10),
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
+            height=280, margin=dict(t=10, b=30, l=10, r=10),
+            xaxis_title="Số lượt ghi nhận bệnh lý",
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         )
-        st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
+        st.caption("Một hồ sơ có thể thuộc nhiều nhóm bệnh.")
+        st.plotly_chart(fig2, width="stretch", config={"displayModeBar": False})
 
 col_c3, col_c4 = st.columns(2)
 
@@ -191,7 +189,7 @@ with col_c3:
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
         )
-        st.plotly_chart(fig3, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig3, width="stretch", config={"displayModeBar": False})
 
 with col_c4:
     with st.container(border=True):
@@ -226,7 +224,7 @@ with col_c4:
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
         )
-        st.plotly_chart(fig4, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig4, width="stretch", config={"displayModeBar": False})
 
 # Bảng nhật ký truy vấn QueryLog & Xuất CSV
 st.markdown("---")
@@ -263,7 +261,7 @@ if logs_list:
     ]
     st.dataframe(
         table_display,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 else:

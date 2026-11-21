@@ -447,4 +447,146 @@ def verify_meal_plan(
                     )
                 )
 
+    # 13. PORTION_UNREALISTIC & MEAL_IMBALANCE (chỉ kiểm tra trên DB đầy đủ >= 15 món)
+    day_food_sets: dict[int, set[int]] = {}
+    check_realistic = len(food_map) >= 15
+    for day_plan in plan.days:
+        day_seed_g = 0.0
+        meal_kcals: dict[str, float] = {}
+        day_fids: set[int] = set()
+        for meal in day_plan.meals:
+            m_kcal = 0.0
+            for item in meal.items:
+                fid = int(item.food_id)
+                day_fids.add(fid)
+                food = food_map.get(fid)
+                if not food:
+                    continue
+                m_kcal += float(food.get("kcal") or 0.0) * (item.grams / 100.0)
+                if not check_realistic or "food_group" not in food:
+                    continue
+                grp = str(food.get("food_group") or "").strip().lower()
+                unit_g = float(food.get("unit_default_g") or 100.0)
+                fat_g = float(food.get("fat_g") or 0.0)
+                tags = _split_tags(str(food.get("tags", "")))
+                name_vi = str(food.get("name_vi", fid))
+
+                if grp in ("dau_hat", "dau_mo_hat"):
+                    if fat_g >= 80.0 and item.grams > 25.0:
+                        violations.append(
+                            Violation(
+                                code="PORTION_UNREALISTIC",
+                                message_vi=(
+                                    f"Ngày {day_plan.day} ({meal.meal}): dầu/mỡ '{name_vi}' "
+                                    f"{item.grams:.0f}g quá nhiều cho 1 bữa (tối đa 25g)."
+                                ),
+                                day=day_plan.day,
+                                meal=meal.meal,
+                                food_id=fid,
+                            )
+                        )
+                    elif fat_g < 80.0:
+                        day_seed_g += float(item.grams)
+                        max_seed_meal = 30.0 if unit_g <= 15.0 else 40.0
+                        if item.grams > max_seed_meal:
+                            violations.append(
+                                Violation(
+                                    code="PORTION_UNREALISTIC",
+                                    message_vi=(
+                                        f"Ngày {day_plan.day} ({meal.meal}): hạt '{name_vi}' "
+                                        f"{item.grams:.0f}g vượt khẩu phần thực tế "
+                                        f"(tối đa {max_seed_meal:.0f}g/bữa)."
+                                    ),
+                                    day=day_plan.day,
+                                    meal=meal.meal,
+                                    food_id=fid,
+                                )
+                            )
+                elif (
+                    grp in ("thit_gia_cam", "thuy_hai_san", "thit_ca")
+                    and "che_bien_san" not in tags
+                    and unit_g > 60.0
+                    and item.grams < 45.0
+                ):
+                    violations.append(
+                        Violation(
+                            code="PORTION_UNREALISTIC",
+                            message_vi=(
+                                f"Ngày {day_plan.day} ({meal.meal}): đạm chính '{name_vi}' "
+                                f"chỉ {item.grams:.0f}g quá nhỏ, không thực tế (tối thiểu 45g)."
+                            ),
+                            day=day_plan.day,
+                            meal=meal.meal,
+                            food_id=fid,
+                        )
+                    )
+            meal_kcals[meal.meal] = meal_kcals.get(meal.meal, 0.0) + m_kcal
+
+        day_food_sets[day_plan.day] = day_fids
+        if day_seed_g > 35.0:
+            violations.append(
+                Violation(
+                    code="PORTION_UNREALISTIC",
+                    message_vi=(
+                        f"Ngày {day_plan.day}: tổng lượng hạt khô {day_seed_g:.0f}g/ngày "
+                        "quá cao (tối đa 35g/ngày)."
+                    ),
+                    day=day_plan.day,
+                )
+            )
+
+        day_tot_k = sum(meal_kcals.values())
+        if (
+            check_realistic
+            and targets.target_kcal >= 1000.0
+            and day_tot_k >= 800.0
+            and all(m in meal_kcals and meal_kcals[m] > 0 for m in MAIN_MEALS)
+        ):
+            for m in MAIN_MEALS:
+                share = meal_kcals[m] / day_tot_k
+                if share < 0.15 or share > 0.50:
+                    violations.append(
+                        Violation(
+                            code="MEAL_IMBALANCE",
+                            message_vi=(
+                                f"Ngày {day_plan.day} ({m}): năng lượng chiếm {share * 100:.0f}% "
+                                "tổng ngày, mất cân đối bữa ăn (nên trong khoảng 18%–48%)."
+                            ),
+                            day=day_plan.day,
+                            meal=m,
+                        )
+                    )
+
+    # 14. DAY_DUPLICATE: phát hiện lặp nguyên ngày khi có >= 12 món hợp lệ
+    pool_size = len(allowed_ids) if allowed_ids is not None else len(food_map)
+    if len(plan.days) >= 2 and pool_size >= 12:
+        sorted_days = sorted(day_food_sets.keys())
+        reported_dup = False
+        for i, d_a in enumerate(sorted_days):
+            if reported_dup:
+                break
+            set_a = day_food_sets[d_a]
+            if not set_a:
+                continue
+            for d_b in sorted_days[i + 1 :]:
+                set_b = day_food_sets[d_b]
+                if not set_b:
+                    continue
+                union = set_a | set_b
+                jaccard = len(set_a & set_b) / len(union) if union else 0.0
+                if jaccard >= 0.85:
+                    violations.append(
+                        Violation(
+                            code="DAY_DUPLICATE",
+                            message_vi=(
+                                f"Ngày {d_a} và Ngày {d_b} lặp lại gần như y hệt "
+                                f"({jaccard * 100:.0f}% món trùng nhau). "
+                                "Cần đổi món đạm/rau/tinh bột để đa dạng giữa các ngày."
+                            ),
+                            day=d_b,
+                        )
+                    )
+                    reported_dup = True
+                    break
+
     return violations, daily_totals

@@ -1,0 +1,116 @@
+{
+  "demo_querylog": [
+    {
+      "session_id": "sess-6346f6b3d50b",
+      "patient_code": "P0001",
+      "status": "approved",
+      "latency_ms": 599.68,
+      "llm_calls": 3,
+      "tokens_in": 8617,
+      "tokens_out": 1465,
+      "retry_count": 1,
+      "violation_codes": "",
+      "is_synthetic_log": 0
+    }
+  ],
+  "test_pollution": [
+    {
+      "id": 644,
+      "thread_id": "thread-normal-555b5354",
+      "status": "approved"
+    },
+    {
+      "id": 645,
+      "thread_id": "thread-risk-fff3498a",
+      "status": "redirect_to_doctor"
+    },
+    {
+      "id": 646,
+      "thread_id": "thread-inj-f5c064d5",
+      "status": "blocked"
+    },
+    {
+      "id": 647,
+      "thread_id": "thread-retry-fix-011e5a55",
+      "status": "pending_review"
+    },
+    {
+      "id": 648,
+      "thread_id": "thread-exhausted-1ed29df4",
+      "status": "needs_human_review"
+    },
+    {
+      "id": 649,
+      "thread_id": "thread-reject-800e9070",
+      "status": "rejected"
+    },
+    {
+      "id": 650,
+      "thread_id": "thread-edit-58564d7d",
+      "status": "approved"
+    },
+    {
+      "id": 651,
+      "thread_id": "thread-cross-proc-f5fd66a1",
+      "status": "approved"
+    },
+    {
+      "id": 652,
+      "thread_id": "thread-inv-dec-e6abf8a5",
+      "status": "approved"
+    },
+    {
+      "id": 653,
+      "thread_id": "thread-shared-5430b11a",
+      "status": "approved"
+    },
+    {
+      "id": 654,
+      "thread_id": "thread-done-ok-015065c5",
+      "status": "approved"
+    },
+    {
+      "id": 655,
+      "thread_id": "thread-done-rej-74e4f424",
+      "status": "rejected"
+    },
+    {
+      "id": 656,
+      "thread_id": "thread-done-risk-e8ed856f",
+      "status": "redirect_to_doctor"
+    },
+    {
+      "id": 657,
+      "thread_id": "thread-serde-bdaebbd0",
+      "status": "approved"
+    },
+    {
+      "id": 658,
+      "thread_id": "thread-prv-alibaba-47b5b9",
+      "status": "pending_review"
+    },
+    {
+      "id": 659,
+      "thread_id": "thread-prv-groq-b11ef3",
+      "status": "pending_review"
+    }
+  ],
+  "chat_guardrails": [
+    {
+      "session_id": "QA_CHAT_highrisk",
+      "layer": "chat_output",
+      "type": "FORBIDDEN_OUTPUT"
+    },
+    {
+      "session_id": "QA_CHAT_drug",
+      "layer": "chat_input",
+      "type": "MEDICAL_ADVICE"
+    },
+    {
+      "session_id": "QA_CHAT_injection",
+      "layer": "chat_input",
+      "type": "INJECTION"
+    }
+  ],
+  "chat_querylog_count": 0
+}

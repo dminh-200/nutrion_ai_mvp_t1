@@ -22,12 +22,15 @@ def _split_tags(raw: str) -> set[str]:
     return {t.strip().lower() for t in normalized.split("|") if t.strip()}
 
 
-def load_food_db_from_sqlite() -> list[dict[str, Any]]:
+def load_food_db_from_sqlite(session: Session | None = None) -> list[dict[str, Any]]:
     """Đọc toàn bộ thực phẩm và dinh dưỡng từ SQLite thành danh sách dict."""
-    engine = get_engine()
-    with Session(engine) as session:
-        stmt = select(Food, FoodNutrient).join(FoodNutrient, Food.id == FoodNutrient.food_id)
+    stmt = select(Food, FoodNutrient).join(FoodNutrient, Food.id == FoodNutrient.food_id)
+    if session is not None:
         rows = session.execute(stmt).all()
+    else:
+        engine = get_engine()
+        with Session(engine) as sess:
+            rows = sess.execute(stmt).all()
 
     result: list[dict[str, Any]] = []
     for food, nut in rows:
@@ -67,6 +70,7 @@ def search_food(
 ) -> list[dict[str, Any]]:
     """Tìm kiếm món ăn theo tên không dấu và bộ lọc dinh dưỡng/dị ứng."""
     items = food_db if food_db is not None else load_food_db_from_sqlite()
+    has_real_data = any("SAMPLE_DATA" not in str(it.get("source", "")) for it in items)
     q_ascii = unidecode(query).strip().lower()
     ex_allergens = {a.strip().lower() for a in (exclude_allergens or []) if a.strip()}
     ex_tags = {t.strip().lower() for t in (exclude_tags or []) if t.strip()}
@@ -74,6 +78,8 @@ def search_food(
 
     matched: list[dict[str, Any]] = []
     for item in items:
+        if has_real_data and "SAMPLE_DATA" in str(item.get("source", "")):
+            continue
         name_ascii = (item.get("name_ascii") or unidecode(item["name_vi"])).lower()
         if q_ascii and q_ascii not in name_ascii:
             continue
@@ -108,7 +114,7 @@ def get_allowed_foods(
     """Lọc danh sách món hợp lệ theo nhu cầu và dị ứng, ưu tiên đa dạng food_group."""
     _ = targets  # Giữ tương thích chữ ký SPEC 7.3; lọc hiện dựa vào needs & allergens.
     cfg = rules or load_rules()
-    exclude_tags: list[str] = []
+    exclude_tags: list[str] = ["nguyen_lieu_song"]
     max_purine_level: str | None = None
 
     for need_name in needs.needs:

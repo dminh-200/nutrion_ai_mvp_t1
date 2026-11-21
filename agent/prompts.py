@@ -391,7 +391,6 @@ def _build_alibaba_macro_guide(
         if targets.sugar_max_g is not None
         else ""
     )
-    oil_max = max(grams_min, 15.0)
     lines = [
         "\n\nNGƯỠNG ĐẠT MỖI NGÀY (BẮT BUỘC):",
         (
@@ -409,24 +408,74 @@ def _build_alibaba_macro_guide(
             "Cộng nhẩm tổng ngày trước khi xuất JSON."
         ),
         (
-            "- Cách chia khẩu phần cân macro & xơ: ngũ cốc góp 2-9g đạm/100g nên thịt/cá/trứng "
-            f"chỉ lấy vừa đủ để Đạm <= {p_high:.0f}g; nhóm dau_mo_hat (dầu 100g béo/100g) chỉ dùng "
-            f"{grams_min:.0f}-{oil_max:.0f}g/ngày hoặc bỏ qua nếu thịt/cá/hạt đã đủ béo "
-            f"để Béo <= {f_high:.0f}g; ưu tiên yến mạch/gạo lứt/khoai lang, rau xanh, đậu/hạt "
-            f"(hạt chia/đậu xanh/ổi) để vừa đạt Carb >= {c_low:.0f}g "
-            f"vừa đạt Chất xơ >= {fiber_floor:.1f}g."
+            "- Cách chia khẩu phần cân macro, xơ & thực tế bữa ăn: mỗi bữa chính "
+            "(breakfast/lunch/dinner) phân bổ 25–40% kcal ngày (không dồn >48% vào 1 bữa); "
+            "thịt/cá chính >= 50g/bữa; hạt chia/hạt khô tối đa 20–30g/ngày; nhóm dầu ăn "
+            "tối đa 10–15g/bữa; ưu tiên đa dạng món khác nhau giữa các ngày (không lặp "
+            "chu kỳ giống hệt nhau) và tôn trọng cách chế biến trong SỞ_THÍCH (vd: luộc/hấp)."
+        ),
+        (
+            "- Cân bằng macro: ngũ cốc góp 2-9g đạm/100g nên thịt/cá/trứng "
+            f"chỉ lấy vừa đủ để Đạm <= {p_high:.0f}g; ưu tiên yến mạch nấu chín/cơm gạo lứt/khoai "
+            f"lang, rau xanh, đậu nấu chín để vừa đạt Carb >= {c_low:.0f}g "
+            f"vừa đạt Chất xơ >= {fiber_floor:.1f}g (không đẩy xơ quá 45g/ngày)."
+        ),
+        (
+            f"- Đạt đủ Béo ({f_low:.0f}-{f_high:.0f}g/ngày) trong giới hạn thực tế: "
+            "bố trí đủ 2-3 bữa có nguồn chất béo lành mạnh mỗi ngày (vd: 10-15g dầu thực vật "
+            "chia cho bữa trưa và tối, kết hợp thêm cá béo/quả bơ/trứng hoặc hạt trong giới hạn "
+            "<= 30g/ngày)."
+            + (
+                f" Do giới hạn đường <= {targets.sugar_max_g:.0f}g/ngày, hạn chế trái cây ngọt "
+                "và sữa có đường, ưu tiên rau xanh và tinh bột ít đường."
+                if targets.sugar_max_g is not None and targets.sugar_max_g <= 25.0
+                else ""
+            )
         ),
     ]
     if violations and any(
-        v.code in ("MACRO_OUT_OF_RANGE", "BELOW_FLOOR", "KCAL_OUT_OF_RANGE", "FIBER_LOW")
+        v.code
+        in (
+            "MACRO_OUT_OF_RANGE",
+            "BELOW_FLOOR",
+            "KCAL_OUT_OF_RANGE",
+            "FIBER_LOW",
+            "SUGAR_OVER",
+            "PORTION_UNREALISTIC",
+            "MEAL_IMBALANCE",
+            "DAY_DUPLICATE",
+        )
         for v in violations
     ):
         lines.append(
-            "- SỬA VI PHẠM LẦN TRƯỚC: Điều chỉnh trực tiếp grams đúng chiều lỗi "
-            "(thừa Đạm -> giảm thịt/cá/trứng; thừa Béo -> giảm/bỏ dầu ăn và món nhiều mỡ; "
-            "thiếu Carb hoặc dưới sàn kcal -> tăng cơm/bún/khoai/yến mạch; thiếu Chất xơ "
-            "[FIBER_LOW] -> tăng rau củ, đậu hạt, hạt chia, yến mạch hoặc ổi/bơ)."
+            "- SỬA VI PHẠM LẦN TRƯỚC: Điều chỉnh trực tiếp đúng chiều lỗi "
+            "(thừa Đạm -> giảm nhẹ thịt/cá nhưng giữ >= 50g/bữa; "
+            "thiếu Béo -> thêm 10-15g dầu thực vật ở 2 bữa hoặc bổ sung cá béo/quả bơ/hạt "
+            "<= 30g/ngày; thừa Béo -> giảm dầu/hạt; "
+            "SUGAR_OVER -> giảm hoặc bỏ trái cây ngọt/sữa có đường, thay bằng rau xanh hoặc "
+            "tinh bột ít đường; "
+            "PORTION_UNREALISTIC -> hạt khô <= 30g, dầu <= 20g, thịt/cá >= 50g; "
+            "MEAL_IMBALANCE -> chia lại đều hơn giữa sáng/trưa/tối; "
+            "DAY_DUPLICATE -> thay đổi món đạm, tinh bột và rau khác nhau giữa các ngày)."
         )
+    return "\n".join(lines)
+
+
+def format_rag_guidelines_for_planner(
+    snippets: list[GuidelineSnippet] | None,
+    *,
+    max_items: int = 3,
+    max_chars: int = 240,
+) -> str:
+    """Rút gọn tối đa `max_items` đoạn RAG kèm nguồn cho planner để tiết kiệm token."""
+    if not snippets:
+        return ""
+    lines: list[str] = []
+    for snip in snippets[:max_items]:
+        clean = " ".join(snip.text.split())
+        if len(clean) > max_chars:
+            clean = clean[: max_chars - 3].rstrip() + "..."
+        lines.append(f"- ({snip.disease or 'chung'}) {clean} [{snip.source_name}, tr. {snip.page}]")
     return "\n".join(lines)
 
 
@@ -437,6 +486,7 @@ def build_planner_prompt(
     needs: NeedsResult,
     allowed_foods: list[dict[str, Any]],
     violations: list[Violation] | None = None,
+    snippets: list[GuidelineSnippet] | None = None,
     prompts_dir: Path = DEFAULT_PROMPTS_DIR,
     provider: str = "gemini",
 ) -> str:
@@ -472,6 +522,9 @@ def build_planner_prompt(
             "preferences": preferences_str,
         },
     )
+    rag_block = format_rag_guidelines_for_planner(snippets)
+    if rag_block:
+        rendered += f"\n\nHƯỚNG_DẪN_LÂM_SÀNG_THAM_KHẢO (RAG):\n{rag_block}"
     if norm_provider == "alibaba":
         rendered = rendered.replace(
             "(id|tên|kcal/100g|nhóm|tags|xơ_g)",

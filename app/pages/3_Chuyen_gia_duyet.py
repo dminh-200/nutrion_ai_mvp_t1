@@ -79,6 +79,10 @@ selected_label = st.selectbox(
     key="selected_plan_label",
 )
 selected_plan_id = options_map[selected_label]
+if st.session_state.get("preview_plan_id") != selected_plan_id:
+    st.session_state["edit_preview_result"] = None
+    st.session_state["preview_plan_id"] = selected_plan_id
+    st.session_state["preview_items"] = None
 st.session_state["review_selected_plan_id"] = selected_plan_id
 
 # Tải chi tiết thực đơn
@@ -150,6 +154,12 @@ editor_rows = [
     for it in detail.get("items", [])
 ]
 
+has_menu_items = bool(editor_rows)
+if not has_menu_items:
+    st.warning("Ca này chưa có món ăn để duyệt. Chuyên gia có thể từ chối và ghi rõ lý do.")
+elif current_status == "needs_human_review":
+    st.warning("Thực đơn chưa đạt kiểm chứng tự động. Chỉ duyệt sau khi bản sửa đạt kiểm chứng.")
+
 edited_df = st.data_editor(
     editor_rows,
     column_config={
@@ -185,6 +195,9 @@ for r in edited_df:
         }
     )
 
+if st.session_state.get("preview_items") != edited_items_payload:
+    st.session_state["edit_preview_result"] = None
+
 # Nút kiểm chứng lại bản sửa (Dry-run)
 col_v1, col_v2 = st.columns([1, 2])
 with col_v1:
@@ -199,6 +212,7 @@ if verify_clicked:
         try:
             preview_res = preview_and_verify_edited_items(selected_plan_id, edited_items_payload)
             st.session_state["edit_preview_result"] = preview_res
+            st.session_state["preview_items"] = edited_items_payload
 
             if preview_res.get("is_valid"):
                 st.success("✅ Bản sửa hợp lệ! Đạt toàn bộ 11 tiêu chí kiểm chứng an toàn y tế.")
@@ -235,13 +249,16 @@ with col_act1:
         "✅ Phê duyệt nguyên bản",
         type="primary",
         use_container_width=True,
+        disabled=not has_menu_items or current_status != "pending_review",
         key="btn_approve_original",
     )
 
 with col_act2:
     # Nếu đã chạy kiểm chứng và không hợp lệ thì cảnh báo
     preview_state = st.session_state.get("edit_preview_result")
-    save_edit_disabled = preview_state is not None and not preview_state.get("is_valid", False)
+    save_edit_disabled = not has_menu_items or not (
+        preview_state is not None and preview_state.get("is_valid", False)
+    )
 
     save_edit_clicked = st.button(
         "💾 Lưu chỉnh sửa & Duyệt",
@@ -261,15 +278,17 @@ with col_act3:
 if approve_orig_clicked:
     with st.spinner("Đang lưu phê duyệt..."):
         try:
+            if not has_menu_items or current_status != "pending_review":
+                raise ValueError("Chỉ thực đơn đang chờ duyệt và có món ăn mới được duyệt.")
             if current_status == "pending_review":
-                resume_review(
+                review_result = resume_review(
                     thread_id=mp["thread_id"],
                     decision="approve",
                     note=review_note.strip(),
                     reviewer_name=reviewer_name.strip() or "Chuyên gia",
                 )
             else:
-                record_review_for_finalized_plan(
+                review_result = record_review_for_finalized_plan(
                     meal_plan_id=selected_plan_id,
                     reviewer_name=reviewer_name.strip() or "Chuyên gia",
                     decision="approve",
@@ -284,8 +303,11 @@ if approve_orig_clicked:
 if save_edit_clicked:
     with st.spinner("Đang lưu bản chỉnh sửa và phê duyệt..."):
         try:
+            preview_res = preview_and_verify_edited_items(selected_plan_id, edited_items_payload)
+            if not preview_res["is_valid"]:
+                raise ValueError("Bản sửa chưa đạt kiểm chứng. Vui lòng kiểm tra lại.")
             if current_status == "pending_review":
-                resume_review(
+                review_result = resume_review(
                     thread_id=mp["thread_id"],
                     decision="edit",
                     note=review_note.strip(),
@@ -293,13 +315,15 @@ if save_edit_clicked:
                     reviewer_name=reviewer_name.strip() or "Chuyên gia",
                 )
             else:
-                record_review_for_finalized_plan(
+                review_result = record_review_for_finalized_plan(
                     meal_plan_id=selected_plan_id,
                     reviewer_name=reviewer_name.strip() or "Chuyên gia",
                     decision="edit",
                     note=review_note.strip(),
                     edited_items=edited_items_payload,
                 )
+            if review_result.get("status") != "approved":
+                raise ValueError("Bản sửa chưa được phê duyệt; cần chuyên gia xem lại.")
             st.success("Đã lưu chỉnh sửa và phê duyệt thực đơn thành công!")
             st.session_state["edit_preview_result"] = None
             st.rerun()

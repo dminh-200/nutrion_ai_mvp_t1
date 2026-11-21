@@ -1,0 +1,27 @@
+{
+  "name": "nutri-meal-studio",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@fontsource/be-vietnam-pro": "5.2.8",
+    "@radix-ui/react-dialog": "1.3.1",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "lucide-react": "1.74.0",
+    "motion": "14.14.0",
+    "radix-ui": "1.8.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "tailwind-merge": "3.7.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.5",
+    "esbuild": "0.28.2",
+    "tailwindcss": "4.3.5"
+  }
+}

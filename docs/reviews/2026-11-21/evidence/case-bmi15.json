@@ -1,0 +1,45 @@
+{
+  "status": "redirect_to_doctor",
+  "meal_plan_id": 667,
+  "thread_id": "thread-32505dc6ac99",
+  "session_id": "sess-12da5b9cb5ca",
+  "trace_id": "92038b02b3a0388350b50dfd594e45cc",
+  "retry_count": 0,
+  "input_flags": [
+    "RISK_BMI_LOW"
+  ],
+  "output_flags": [],
+  "risk": {
+    "high_risk": true,
+    "reasons": [
+      "RISK_BMI_LOW"
+    ],
+    "message_vi": "Chỉ số cơ thể rất thấp, cần thăm khám trực tiếp."
+  },
+  "targets": null,
+  "needs": null,
+  "items": [],
+  "daily_totals": [],
+  "violations": [],
+  "snippets": [],
+  "explanation_md": "**Khuyến nghị thăm khám trực tiếp:** Chỉ số cơ thể rất thấp, cần thăm khám trực tiếp.\n\n---\n*Lưu ý: Thực đơn chỉ mang tính tham khảo hỗ trợ dinh dưỡng, không thay thế chẩn đoán hoặc chỉ định điều trị của bác sĩ.*",
+  "metrics": {
+    "llm_calls": 0,
+    "tokens_in": 0,
+    "tokens_out": 0,
+    "latency_ms": 63.29,
+    "model_usage": {},
+    "est_cost_usd": 0.0,
+    "est_cost_if_paid_usd": 0.0
+  },
+  "execution": {
+    "api_attempts": 0,
+    "cache_hits": 0,
+    "mock_calls": 0
+  },
+  "trace_notes": [
+    "intake: nhận hồ sơ QA_DEMO_bmi15",
+    "input_guardrail: chuyển hướng bác sĩ (RISK_BMI_LOW)",
+    "finalize: hoàn tất với status=redirect_to_doctor, meal_plan_id=667"
+  ]
+}
