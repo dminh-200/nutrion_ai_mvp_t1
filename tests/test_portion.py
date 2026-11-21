@@ -281,3 +281,118 @@ def test_adjust_portions_respects_realistic_seed_and_meat_bounds() -> None:
     items_by_id = {it.food_id: it.grams for it in adjusted.days[0].meals[0].items}
     assert items_by_id[3] <= 30.0
     assert items_by_id[2] >= 50.0
+
+
+def test_adjust_portions_reduces_excess_sodium_below_target() -> None:
+    """Khi thực đơn ban đầu vượt sodium_max_mg, portion_adjust phải chủ động kéo Natri về ngưỡng."""
+    salty_db = [
+        {
+            "id": 1,
+            "name_vi": "Cơm gạo tẻ",
+            "food_group": "ngu_coc",
+            "unit_default_g": 150.0,
+            "kcal": 130.0,
+            "protein_g": 2.7,
+            "fat_g": 0.3,
+            "carb_g": 28.0,
+            "fiber_g": 0.4,
+            "sugar_g": 0.1,
+            "sodium_mg": 5.0,
+            "tags": "tinh_bot",
+        },
+        {
+            "id": 2,
+            "name_vi": "Món kho hơi mặn",
+            "food_group": "thit_gia_cam",
+            "unit_default_g": 100.0,
+            "kcal": 160.0,
+            "protein_g": 22.0,
+            "fat_g": 7.0,
+            "carb_g": 1.0,
+            "fiber_g": 0.0,
+            "sugar_g": 0.0,
+            "sodium_mg": 1200.0,
+            "tags": "dam",
+        },
+        {
+            "id": 3,
+            "name_vi": "Ức gà luộc nhạt",
+            "food_group": "thit_gia_cam",
+            "unit_default_g": 100.0,
+            "kcal": 140.0,
+            "protein_g": 29.0,
+            "fat_g": 2.5,
+            "carb_g": 0.0,
+            "fiber_g": 0.0,
+            "sugar_g": 0.0,
+            "sodium_mg": 55.0,
+            "tags": "dam_nac",
+        },
+        {
+            "id": 4,
+            "name_vi": "Dầu ô liu",
+            "food_group": "dau_mo_hat",
+            "unit_default_g": 10.0,
+            "kcal": 900.0,
+            "protein_g": 0.0,
+            "fat_g": 100.0,
+            "carb_g": 0.0,
+            "fiber_g": 0.0,
+            "sugar_g": 0.0,
+            "sodium_mg": 2.0,
+            "tags": "chat_beo_tot",
+        },
+    ]
+    targets = NutritionTargets(
+        bmi=24.0,
+        bmr=1500.0,
+        tdee=1800.0,
+        target_kcal=1800.0,
+        protein_g=90.0,
+        fat_g=60.0,
+        carb_g=225.0,
+        fiber_min_g=20.0,
+        sodium_max_mg=2000.0,
+        sugar_max_g=25.0,
+        kcal_floor=1500.0,
+    )
+    # Ban đầu món mặn 220g -> 2640mg Natri > 2000mg
+    plan = MealPlanLLM(
+        days=[
+            DayPlan(
+                day=1,
+                meals=[
+                    Meal(
+                        meal="breakfast",
+                        items=[
+                            PlannedItem(food_id=1, grams=250.0),
+                            PlannedItem(food_id=3, grams=80.0),
+                            PlannedItem(food_id=4, grams=15.0),
+                        ],
+                    ),
+                    Meal(
+                        meal="lunch",
+                        items=[
+                            PlannedItem(food_id=1, grams=250.0),
+                            PlannedItem(food_id=2, grams=220.0),
+                            PlannedItem(food_id=4, grams=15.0),
+                        ],
+                    ),
+                    Meal(
+                        meal="dinner",
+                        items=[
+                            PlannedItem(food_id=1, grams=250.0),
+                            PlannedItem(food_id=3, grams=100.0),
+                            PlannedItem(food_id=4, grams=15.0),
+                        ],
+                    ),
+                ],
+            )
+        ]
+    )
+    before = score_menu(plan, food_db=salty_db)["daily_totals"][0]
+    assert before["sodium_mg"] > 2000.0
+
+    adjusted, _ = adjust_portions(plan, targets, food_db=salty_db)
+    after = score_menu(adjusted, food_db=salty_db)["daily_totals"][0]
+    assert after["sodium_mg"] <= 2000.0

@@ -29,6 +29,7 @@ import {
   formatInt,
   formatMeal,
   formatNumber,
+  formatRiskReason,
   formatStatus,
   formatViolationCode,
 } from "@/lib/format";
@@ -648,17 +649,25 @@ export function ReviewPage({
                   </div>
                   <div>
                     <span className="font-semibold uppercase text-[#64748B]">Mục tiêu ngày</span>
-                    <p className="mt-1 font-mono font-bold text-[#0B4F4A] text-sm">
-                      {formatInt(detail.targets.target_kcal)} kcal
-                    </p>
-                    <p className="mt-0.5 flex flex-wrap gap-x-1.5 font-mono text-[#64748B]">
-                      <span>P {formatNumber(detail.targets.protein_g, 0)}g</span>
-                      <span>· F {formatNumber(detail.targets.fat_g, 0)}g</span>
-                      <span>· C {formatNumber(detail.targets.carb_g, 0)}g</span>
-                      <span className="whitespace-nowrap">
-                        · Na ≤ {formatInt(detail.targets.sodium_max_mg)}mg
-                      </span>
-                    </p>
+                    {Number(detail.targets?.target_kcal ?? 0) > 0 ? (
+                      <>
+                        <p className="mt-1 font-mono font-bold text-[#0B4F4A] text-sm">
+                          {formatInt(detail.targets.target_kcal)} kcal
+                        </p>
+                        <p className="mt-0.5 flex flex-wrap gap-x-1.5 font-mono text-[#64748B]">
+                          <span>P {formatNumber(detail.targets.protein_g, 0)}g</span>
+                          <span>· F {formatNumber(detail.targets.fat_g, 0)}g</span>
+                          <span>· C {formatNumber(detail.targets.carb_g, 0)}g</span>
+                          <span className="whitespace-nowrap">
+                            · Na ≤ {formatInt(detail.targets.sodium_max_mg)}mg
+                          </span>
+                        </p>
+                      </>
+                    ) : (
+                      <p className="mt-1 text-xs font-medium text-[#B45309]">
+                        Chưa tính (tạm dừng ở bước sàng lọc đầu vào)
+                      </p>
+                    )}
                   </div>
                   <div>
                     <span className="font-semibold uppercase text-[#64748B]">Sở thích ghi nhận</span>
@@ -672,6 +681,7 @@ export function ReviewPage({
               {/* Guardrails / Violations / Review Note Alert */}
               {((detail.violations && detail.violations.length > 0) ||
                 detail.guardrail_events.length > 0 ||
+                Boolean(detail.risk?.message_vi) ||
                 currentStatus === "needs_human_review") && (
                 <Card className="border-[#FDE68A] bg-gradient-to-r from-[#FFFBEB]/95 to-[#FEF3C7]/45">
                   <CardContent className="p-4 space-y-2.5 text-xs">
@@ -679,6 +689,21 @@ export function ReviewPage({
                       <ShieldAlert className="h-4 w-4" />
                       Lý do cần chuyên gia xem xét & Vi phạm kiểm chứng tự động
                     </p>
+                    {detail.risk?.message_vi && (
+                      <div className="space-y-1 text-[#78350F]">
+                        <p className="font-semibold text-[#92400E]">
+                          Cảnh báo sàng lọc nguy cơ đầu vào:
+                        </p>
+                        <p>{detail.risk.message_vi}</p>
+                        {detail.risk.reasons && detail.risk.reasons.length > 0 && (
+                          <ul className="space-y-0.5 pl-2">
+                            {detail.risk.reasons.map((code) => (
+                              <li key={code}>• {formatRiskReason(code)}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                     {detail.violations && detail.violations.length > 0 && (
                       <div className="space-y-1">
                         <p className="font-semibold text-[#92400E]">
@@ -707,7 +732,8 @@ export function ReviewPage({
                         ))}
                       </ul>
                     )}
-                    {(!detail.violations || detail.violations.length === 0) &&
+                    {!detail.risk?.message_vi &&
+                      (!detail.violations || detail.violations.length === 0) &&
                       detail.guardrail_events.length === 0 && (
                         <p className="text-[#78350F]">
                           Thực đơn chưa đạt hết ngưỡng kiểm chứng tự động. Cần chuyên gia kiểm tra kỹ định lượng trước khi phê duyệt.
@@ -752,7 +778,9 @@ export function ReviewPage({
                   )}
                 </CardHeader>
                 <CardContent className="p-4 space-y-4">
-                  {canReviewAction && allowedFoods.length > 0 && (
+                  {canReviewAction &&
+                    Number(detail.targets?.target_kcal ?? 0) > 0 &&
+                    allowedFoods.length > 0 && (
                     <div className="rounded-xl border border-[#CDE6DF] bg-[#F0FDFA]/70 p-3 space-y-2.5 text-xs">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="font-bold text-[#0B4F4A]">

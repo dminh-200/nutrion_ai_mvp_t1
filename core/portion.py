@@ -35,7 +35,7 @@ def _item_grams_bounds(
         elif unit_g <= 15.0:
             hi = min(hi, 30.0)
         elif unit_g <= 25.0:
-            hi = min(hi, 40.0)
+            hi = min(hi, 35.0)
         else:
             hi = min(hi, max(50.0, unit_g * 2.0))
     elif grp in ("thit_gia_cam", "thuy_hai_san", "thit_ca"):
@@ -141,14 +141,20 @@ def _day_is_compliant(
                 return False
     if fiber_floor > 0 and tot["fiber_g"] < fiber_floor - 1e-9:
         return False
+    if targets.sodium_max_mg > 0 and tot["sodium_mg"] > float(targets.sodium_max_mg) + 1e-9:
+        return False
     if targets.sugar_max_g is not None and tot["sugar_g"] > float(targets.sugar_max_g) + 1e-9:
         return False
     if tot["fiber_g"] > 45.0 or tot.get("seed_g", 0.0) > 35.0:
         return False
     if meal_shares and all(m in meal_shares for m in ("breakfast", "lunch", "dinner")):
+        has_snack = meal_shares.get("snack", 0.0) > 0.0
+        min_main = 0.14 if has_snack else 0.18
         for m in ("breakfast", "lunch", "dinner"):
-            if meal_shares[m] < 0.18 or meal_shares[m] > 0.48:
+            if meal_shares[m] < min_main or meal_shares[m] > 0.48:
                 return False
+        if has_snack and meal_shares.get("snack", 0.0) > 0.32:
+            return False
     return True
 
 
@@ -196,6 +202,9 @@ def _day_loss(
 
     if fiber_floor > 0 and tot["fiber_g"] < fiber_floor:
         loss += 100.0 * ((fiber_floor - tot["fiber_g"]) / fiber_floor + 0.01)
+    if targets.sodium_max_mg > 0 and tot["sodium_mg"] > float(targets.sodium_max_mg):
+        na_max = max(float(targets.sodium_max_mg), 1.0)
+        loss += 250.0 * ((tot["sodium_mg"] - na_max) / na_max + 0.01)
     if targets.sugar_max_g is not None and tot["sugar_g"] > float(targets.sugar_max_g):
         sg_max = max(float(targets.sugar_max_g), 1.0)
         loss += 250.0 * ((tot["sugar_g"] - sg_max) / sg_max + 0.01)
@@ -205,12 +214,16 @@ def _day_loss(
         loss += 200.0 * ((tot["seed_g"] - 35.0) / 35.0 + 0.01)
 
     if meal_shares and all(m in meal_shares for m in ("breakfast", "lunch", "dinner")):
+        has_snack = meal_shares.get("snack", 0.0) > 0.0
+        min_main = 0.14 if has_snack else 0.18
         for m in ("breakfast", "lunch", "dinner"):
             sh = meal_shares[m]
-            if sh < 0.18:
-                loss += 120.0 * ((0.18 - sh) + 0.01)
+            if sh < min_main:
+                loss += 120.0 * ((min_main - sh) + 0.01)
             elif sh > 0.48:
                 loss += 120.0 * ((sh - 0.48) + 0.01)
+        if has_snack and meal_shares.get("snack", 0.0) > 0.32:
+            loss += 120.0 * ((meal_shares["snack"] - 0.32) + 0.01)
 
     return loss
 
@@ -253,10 +266,20 @@ def _refine_day_portions(
     if not items:
         return False
 
-    max_possible_fiber = sum(
-        float(food_map[int(it.food_id)].get("fiber_g") or 0.0) * (grams_max / 100.0)
-        for it in items
-    )
+    non_seed_fiber_max = 0.0
+    seed_fiber_rates: list[float] = []
+    for it in items:
+        f_item = food_map[int(it.food_id)]
+        fib_100 = float(f_item.get("fiber_g") or 0.0)
+        if fib_100 <= 0:
+            continue
+        _, hi_g = _item_grams_bounds(f_item, grams_min, grams_max)
+        if _is_dry_seed_or_nut(f_item):
+            seed_fiber_rates.append(fib_100)
+        else:
+            non_seed_fiber_max += fib_100 * (hi_g / 100.0)
+    seed_fiber_max = (max(seed_fiber_rates) * (35.0 / 100.0)) if seed_fiber_rates else 0.0
+    max_possible_fiber = non_seed_fiber_max + seed_fiber_max
     active_fiber_floor = (
         fiber_floor if (fiber_floor > 0 and max_possible_fiber >= fiber_floor) else 0.0
     )
@@ -287,7 +310,7 @@ def _refine_day_portions(
             it.grams = clamped
             changed = True
 
-    single_steps = (-20.0, 20.0, -10.0, 10.0, -5.0, 5.0)
+    single_steps = (-40.0, 40.0, -30.0, 30.0, -20.0, 20.0, -10.0, 10.0, -5.0, 5.0)
     pair_steps = (
         (-5.0, 5.0),
         (-5.0, 10.0),
@@ -302,7 +325,7 @@ def _refine_day_portions(
         (20.0, -5.0),
     )
 
-    for _ in range(55):
+    for _ in range(75):
         cur_tot = _score_day(day_plan, food_map)
         cur_shares = _meal_kcal_shares(day_plan, food_map)
         if _day_is_compliant(

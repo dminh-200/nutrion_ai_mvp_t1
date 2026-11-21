@@ -487,7 +487,7 @@ def verify_meal_plan(
                         )
                     elif fat_g < 80.0:
                         day_seed_g += float(item.grams)
-                        max_seed_meal = 30.0 if unit_g <= 15.0 else 40.0
+                        max_seed_meal = 30.0 if unit_g <= 15.0 else 35.0
                         if item.grams > max_seed_meal:
                             violations.append(
                                 Violation(
@@ -542,18 +542,35 @@ def verify_meal_plan(
             and day_tot_k >= 800.0
             and all(m in meal_kcals and meal_kcals[m] > 0 for m in MAIN_MEALS)
         ):
+            has_snack = meal_kcals.get("snack", 0.0) > 0.0
+            min_main_share = 0.12 if has_snack else 0.15
             for m in MAIN_MEALS:
                 share = meal_kcals[m] / day_tot_k
-                if share < 0.15 or share > 0.50:
+                if share < min_main_share or share > 0.50:
                     violations.append(
                         Violation(
                             code="MEAL_IMBALANCE",
                             message_vi=(
                                 f"Ngày {day_plan.day} ({m}): năng lượng chiếm {share * 100:.0f}% "
-                                "tổng ngày, mất cân đối bữa ăn (nên trong khoảng 18%–48%)."
+                                "tổng ngày, mất cân đối bữa ăn "
+                                f"(nên trong khoảng {int(min_main_share * 100)}%–50%)."
                             ),
                             day=day_plan.day,
                             meal=m,
+                        )
+                    )
+            if has_snack:
+                snack_share = meal_kcals["snack"] / day_tot_k
+                if snack_share > 0.35:
+                    violations.append(
+                        Violation(
+                            code="MEAL_IMBALANCE",
+                            message_vi=(
+                                f"Ngày {day_plan.day} (snack): bữa phụ chiếm "
+                                f"{snack_share * 100:.0f}% tổng ngày, vượt ngưỡng 35%."
+                            ),
+                            day=day_plan.day,
+                            meal="snack",
                         )
                     )
 

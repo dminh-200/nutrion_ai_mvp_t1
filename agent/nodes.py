@@ -354,12 +354,16 @@ def _apply_edited_items(
             if grams <= 0:
                 continue
             key = (day_num, meal_name)
-            by_day_meal.setdefault(key, []).append(
-                PlannedItem.model_construct(food_id=int(it["food_id"]), grams=grams)
-            )
+            fid = int(it["food_id"])
+            bucket = by_day_meal.setdefault(key, [])
+            existing_item = next((x for x in bucket if x.food_id == fid), None)
+            if existing_item is not None:
+                existing_item.grams = round(existing_item.grams + grams, 1)
+            else:
+                bucket.append(PlannedItem.model_construct(food_id=fid, grams=grams))
 
         existing_days = {dp.day: dp for dp in plan.days}
-        ordered_days = [dp.day for dp in plan.days]
+        ordered_days = list(dict.fromkeys(dp.day for dp in plan.days))
         for day_num in sorted(extra_meals_by_day):
             if day_num not in existing_days:
                 ordered_days.append(day_num)
@@ -367,7 +371,7 @@ def _apply_edited_items(
         new_days: list[DayPlan] = []
         for day_num in ordered_days:
             dp = existing_days.get(day_num)
-            meal_names: list[str] = [m.meal for m in dp.meals] if dp else []
+            meal_names: list[str] = list(dict.fromkeys(m.meal for m in dp.meals)) if dp else []
             for m_name in extra_meals_by_day.get(day_num, []):
                 if m_name not in meal_names:
                     meal_names.append(m_name)
@@ -630,6 +634,7 @@ def plan(state: AgentState, gateway: ToolsGateway) -> dict[str, Any]:
             profile=profile,
             needs=needs,
             violations=prev_violations,
+            snippets=state.get("snippets"),
             force_violation=force_violation,
         )
     except get_llm_error_types() as exc:

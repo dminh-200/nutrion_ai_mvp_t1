@@ -541,6 +541,7 @@ def _select_balanced_mock_foods(
             int(f["id"]),
         ),
     )
+    low_protein_ratio = (targets.protein_g * 4.0 / max(targets.target_kcal, 1.0)) <= 0.18
     fiber_carb_pool = [
         f
         for f in pool
@@ -552,13 +553,16 @@ def _select_balanced_mock_foods(
     fiber_carb_cands = sorted(
         fiber_carb_pool,
         key=lambda f: (
+            (0 if f.get("food_group") == "ngu_coc" else 1)
+            if (low_protein_ratio or targets.carb_g >= 240.0)
+            else 0,
             -float(f.get("fiber_g") or 0.0),
             -_ratio(f, "carb_g", 4.0),
             _safe_penalty(f),
             int(f["id"]),
         ),
     )
-    prefer_moderate_fat_prot = targets.fat_g >= 55.0
+    prefer_moderate_fat_prot = targets.fat_g >= 42.0
     prot_cands = sorted(
         [
             f
@@ -585,12 +589,19 @@ def _select_balanced_mock_foods(
         or [f for f in pool if float(f.get("fat_g") or 0.0) >= 10.0]
         or pool,
         key=lambda f: (
+            1 if "chat_beo_bao_hoa" in str(f.get("tags") or "") else 0,
             -(_ratio(f, "fat_g", 9.0)),
             float(f.get("fiber_g") or 0.0),
             _safe_penalty(f),
             int(f["id"]),
         ),
     )
+    oil_cands = [
+        f
+        for f in fat_cands
+        if float(f.get("fat_g") or 0.0) >= 80.0
+        and "chat_beo_bao_hoa" not in str(f.get("tags") or "")
+    ] or fat_cands
     veg_cands = sorted(
         [f for f in pool if f.get("food_group") == "rau_cu"] or pool,
         key=lambda f: (
@@ -627,25 +638,35 @@ def _select_balanced_mock_foods(
     _pick_from(fiber_carb_cands, day_offset)
     _pick_from(prot_cands, day_offset * 2 + 1)
     _pick_from(veg_cands, day_offset * 2 + 1)
-    _pick_from(fat_cands, day_offset)
+    _pick_from(oil_cands, day_offset)
 
     _pick_from(carb_cands, day_offset * 2 + 1)
     _pick_from(prot_cands, day_offset * 2 + 2)
     _pick_from(veg_cands, day_offset * 2 + 2)
-    _pick_from(fat_cands, day_offset + 1)
+    _pick_from(oil_cands if targets.fat_g >= 55.0 else fat_cands, day_offset + 1)
+
+    needs_snack = (
+        targets.target_kcal >= 2350.0
+        or targets.carb_g >= 300.0
+        or targets.fat_g >= 75.0
+    )
+    target_slots = 13 if (needs_snack and len(pool) >= 13) else 11
+    if target_slots == 13:
+        _pick_from(carb_cands, day_offset * 2 + 2)
+        _pick_from(fat_cands, day_offset + 2)
 
     for f in pool:
-        if len(picked) >= 11:
+        if len(picked) >= target_slots:
             break
         fid = int(f["id"])
         if fid not in seen_ids:
             picked.append(f)
             seen_ids.add(fid)
 
-    while len(picked) < 11:
+    while len(picked) < target_slots:
         picked.append(pool[len(picked) % len(pool)])
 
-    return picked[:11]
+    return picked[:target_slots]
 
 
 def _optimize_mock_grams(
@@ -659,15 +680,18 @@ def _optimize_mock_grams(
     bounds = [_item_grams_bounds(f, grams_min, grams_max) for f in chosen]
     grams = [lo for lo, _ in bounds]
 
-    if n == 11:
-        # 0,3,7=carb; 1,4,8=protein; 2,5,9=rau; 6,10=fat
-        carb_each = targets.carb_g * 0.30
-        for idx in (0, 3, 7):
+    if n in (11, 13):
+        # 11 món: 0,3,7=carb; 1,4,8=protein; 2,5,9=rau; 6,10=fat
+        # 13 món (năng lượng cao): thêm snack 11=carb, 12=fat
+        carb_idxs = (0, 3, 7, 11) if n == 13 else (0, 3, 7)
+        fat_idxs = (6, 10, 12) if n == 13 else (6, 10)
+        carb_each = targets.carb_g * (0.23 if n == 13 else 0.30)
+        for idx in carb_idxs:
             c100 = max(float(chosen[idx].get("carb_g") or 0.0), 5.0)
             lo_i, hi_i = bounds[idx]
             grams[idx] = _round_grams((carb_each / c100) * 100.0, lo_i, hi_i)
 
-        prot_each = targets.protein_g * 0.28
+        prot_each = targets.protein_g * (0.27 if n == 13 else 0.28)
         for idx in (1, 4, 8):
             p100 = max(float(chosen[idx].get("protein_g") or 0.0), 5.0)
             lo_i, hi_i = bounds[idx]
@@ -679,11 +703,11 @@ def _optimize_mock_grams(
 
         fat_so_far = sum(
             float(chosen[i].get("fat_g") or 0.0) * (grams[i] / 100.0)
-            for i in range(11)
-            if i not in (6, 10)
+            for i in range(n)
+            if i not in fat_idxs
         )
-        fat_rem = max(0.0, targets.fat_g - fat_so_far) * 0.5
-        for idx in (6, 10):
+        fat_rem = max(0.0, targets.fat_g - fat_so_far) / float(len(fat_idxs))
+        for idx in fat_idxs:
             f100 = max(float(chosen[idx].get("fat_g") or 0.0), 5.0)
             lo_i, hi_i = bounds[idx]
             grams[idx] = _round_grams((fat_rem / f100) * 100.0, lo_i, hi_i)
@@ -735,16 +759,25 @@ def _optimize_mock_grams(
             else 0.0
         )
         imbalance_pen = 0.0
-        if n == 11 and tot_k > 0:
-            for grp_idxs in ((0, 1, 2), (3, 4, 5, 6), (7, 8, 9, 10)):
+        if n in (11, 13) and tot_k > 0:
+            main_groups = ((0, 1, 2), (3, 4, 5, 6), (7, 8, 9, 10))
+            min_main = 0.14 if n == 13 else 0.18
+            for grp_idxs in main_groups:
                 mk = sum(
                     float(chosen[i].get("kcal") or 0.0) * (g_list[i] / 100.0) for i in grp_idxs
                 )
                 sh = mk / tot_k
-                if sh < 0.18:
-                    imbalance_pen += 40.0 * (0.18 - sh)
+                if sh < min_main:
+                    imbalance_pen += 40.0 * (min_main - sh)
                 elif sh > 0.48:
                     imbalance_pen += 40.0 * (sh - 0.48)
+            if n == 13:
+                snack_k = sum(
+                    float(chosen[i].get("kcal") or 0.0) * (g_list[i] / 100.0) for i in (11, 12)
+                )
+                snack_sh = snack_k / tot_k
+                if snack_sh > 0.32:
+                    imbalance_pen += 40.0 * (snack_sh - 0.32)
 
         return (
             3.0 * err_k
@@ -828,8 +861,15 @@ def generate_mock_meal_plan(
     for d in range(1, days + 1):
         chosen = _select_balanced_mock_foods(allowed_foods, targets, day_offset=d - 1)
         grams_list = _optimize_mock_grams(chosen, targets, grams_min, grams_max)
-        if len(chosen) >= 11:
+        if len(chosen) >= 13:
             meal_slots: tuple[tuple[str, tuple[int, ...]], ...] = (
+                ("breakfast", (0, 1, 2)),
+                ("lunch", (3, 4, 5, 6)),
+                ("dinner", (7, 8, 9, 10)),
+                ("snack", (11, 12)),
+            )
+        elif len(chosen) >= 11:
+            meal_slots = (
                 ("breakfast", (0, 1, 2)),
                 ("lunch", (3, 4, 5, 6)),
                 ("dinner", (7, 8, 9, 10)),

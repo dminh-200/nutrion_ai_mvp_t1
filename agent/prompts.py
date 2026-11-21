@@ -457,6 +457,18 @@ def _build_alibaba_macro_guide(
                 if targets.sugar_max_g is not None and targets.sugar_max_g <= 25.0
                 else ""
             )
+            + (
+                " Do mục tiêu năng lượng/macro cao, BẮT BUỘC bổ sung thêm bữa phụ (\"snack\") "
+                "gồm 1 món tinh bột/ngũ cốc hoặc trái cây kết hợp 1 nguồn chất béo lành mạnh "
+                "(dầu thực vật 10-15g hoặc hạt <= 30g/ngày hoặc quả bơ) để đạt đủ Carb & Béo "
+                "mà không vượt trần 400g/món hay 20g dầu/bữa."
+                if (
+                    targets.target_kcal >= 2350.0
+                    or targets.carb_g >= 300.0
+                    or targets.fat_g >= 75.0
+                )
+                else ""
+            )
         ),
     ]
     if violations and any(

@@ -153,7 +153,7 @@ def run_single_case(
         snippets = _retrieve_snippets(list(needs.needs), gateway)
 
     cfg = load_rules()
-    exclude_tags: list[str] = []
+    exclude_tags: list[str] = ["nguyen_lieu_song"]
     max_purine_level: str | None = None
     for need_name in needs.needs:
         need_cfg = cfg["needs"].get(need_name, {})

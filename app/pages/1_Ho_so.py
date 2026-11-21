@@ -179,9 +179,17 @@ elif step == 2:
         st.markdown("#### ⚠️ Tình trạng sức khỏe cần lưu ý")
         st.caption("Lưu ý: Ca nguy cơ cao sẽ được phát hiện và tự động chuyển hướng bác sĩ.")
         col_r1, col_r2, col_r3 = st.columns(3)
+        is_male = st.session_state.get("input_sex") == "Nam"
+        if is_male:
+            st.session_state["input_pregnancy"] = False
+            st.session_state["input_lactating"] = False
         with col_r1:
-            pregnancy = st.checkbox("Đang mang thai", key="input_pregnancy")
-            lactating = st.checkbox("Đang cho con bú", key="input_lactating")
+            pregnancy = st.checkbox(
+                "Đang mang thai", key="input_pregnancy", disabled=is_male
+            )
+            lactating = st.checkbox(
+                "Đang cho con bú", key="input_lactating", disabled=is_male
+            )
         with col_r2:
             ckd_stage = st.number_input(
                 "Giai đoạn suy thận mạn (CKD 0-5):",

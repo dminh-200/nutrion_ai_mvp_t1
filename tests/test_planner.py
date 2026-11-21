@@ -592,3 +592,73 @@ def test_curate_foods_for_alibaba_preserves_healthy_oils_and_nuts() -> None:
     assert len(oils) >= 2
     assert all("chat_beo_bao_hoa" not in str(f.get("tags", "")) for f in oils)
     assert len(nuts) >= 2
+
+
+def test_plan_node_forwards_rag_snippets_to_call_planner_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Node plan phải truyền state['snippets'] (RAG) vào call_planner_llm."""
+    captured: dict[str, Any] = {}
+
+    def _fake_call_planner_llm(**kwargs: Any) -> tuple[MealPlanLLM, dict[str, int]]:
+        captured.update(kwargs)
+        return _valid_plan(), {"tokens_in": 10, "tokens_out": 5}
+
+    monkeypatch.setattr("agent.nodes.call_planner_llm", _fake_call_planner_llm)
+    snips = [
+        GuidelineSnippet(
+            text="Giảm muối dưới 2000 mg natri mỗi ngày cho người tăng huyết áp.",
+            source_name="BYT HTN",
+            year=2010,
+            page=5,
+            disease="htn",
+            score=0.91,
+        )
+    ]
+    with ToolsGateway(mode="direct") as gw:
+        state = {
+            "profile": _profile(),
+            "targets": _targets(),
+            "needs": _needs(),
+            "snippets": snips,
+            "violations": [],
+            "retry_count": 0,
+            "metrics": {},
+            "trace_notes": [],
+        }
+        plan_node(state, gw)  # type: ignore[arg-type]
+
+    assert captured.get("snippets") == snips
+
+
+def test_high_calorie_profile_passes_verifier_with_snack() -> None:
+    """Ca năng lượng cao (2610 kcal, P0004) dùng bữa phụ và vượt qua toàn bộ verifier."""
+    from agent.llm import generate_mock_meal_plan
+    from agent.verifier import verify_meal_plan
+    from core.classify import classify_needs
+    from core.food import get_allowed_foods, load_food_db_from_sqlite
+    from core.nutrition import build_targets
+    from core.portion import adjust_portions
+
+    p = PatientProfile(
+        patient_code="P0004",
+        age=30,
+        sex="male",
+        height_cm=161.9,
+        weight_kg=64.9,
+        activity_level="active",
+        conditions=["htn"],
+        days=4,
+    )
+    food_db = load_food_db_from_sqlite()
+    needs = classify_needs(p)
+    targets = build_targets(p, needs)
+    allowed = get_allowed_foods(needs, p.allergens, limit=120, food_db=food_db)
+    plan = generate_mock_meal_plan(days=p.days, allowed_foods=allowed, targets=targets)
+    adj, _ = adjust_portions(plan, targets, food_db=food_db)
+    with ToolsGateway(mode="direct") as gw:
+        violations, _ = verify_meal_plan(
+            adj, p, targets, gw, needs=needs, allowed_foods=allowed, food_db=food_db
+        )
+    assert violations == []
+    assert any(m.meal == "snack" for d in adj.days for m in d.meals)

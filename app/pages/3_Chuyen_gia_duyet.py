@@ -120,12 +120,21 @@ with st.container(border=True):
         st.markdown(f"**Trạng thái:** {badge_html}", unsafe_allow_html=True)
         st.caption(f"Thread: `{mp.get('thread_id', '')[:16]}...`")
 
-# Kiểm tra vi phạm / Sự kiện guardrail
+# Kiểm tra vi phạm / Sự kiện guardrail / Cảnh báo đầu vào
 guardrails = detail.get("guardrail_events", [])
 violations_list = detail.get("violations", [])
-if guardrails or violations_list or current_status in ("pending_review", "needs_human_review"):
+risk_info = detail.get("risk") or {}
+risk_msg = str(risk_info.get("message_vi") or "").strip() if isinstance(risk_info, dict) else ""
+if (
+    guardrails
+    or violations_list
+    or risk_msg
+    or current_status in ("pending_review", "needs_human_review")
+):
     with st.container(border=True):
         st.markdown("#### ⚠️ Lý do cần chuyên gia xem xét & Vi phạm ghi nhận")
+        if risk_msg:
+            st.warning(f"• **[SÀNG LỌC ĐẦU VÀO]**: {risk_msg}")
         if violations_list:
             for v in violations_list:
                 v_code = v.get("code", "VIOLATION")
@@ -136,7 +145,7 @@ if guardrails or violations_list or current_status in ("pending_review", "needs_
                 lyr = ge.get("layer", "").upper()
                 typ = ge.get("type", "")
                 st.warning(f"• **[{lyr} / {typ}]**: {ge.get('reason')}")
-        if not violations_list and not guardrails:
+        if not risk_msg and not violations_list and not guardrails:
             st.info("Thực đơn cần chuyên gia xem xét để đảm bảo an toàn hoặc tối ưu định lượng.")
 
 # Trình chỉnh sửa thực đơn tương tác st.data_editor
@@ -150,8 +159,13 @@ meal_reverse_map = {
     "Bữa phụ": "snack",
 }
 
-allowed_foods_list = get_allowed_foods_for_plan(selected_plan_id)
-if allowed_foods_list and current_status in ("pending_review", "needs_human_review"):
+has_computed_targets = float(targets.get("target_kcal") or 0.0) > 0.0
+allowed_foods_list = get_allowed_foods_for_plan(selected_plan_id) if has_computed_targets else []
+if (
+    has_computed_targets
+    and allowed_foods_list
+    and current_status in ("pending_review", "needs_human_review")
+):
     with st.expander("➕ Bổ sung món ăn an toàn vào thực đơn", expanded=False):
         c_add1, c_add2, c_add3, c_add4, c_add5 = st.columns([1, 1.3, 3, 1.2, 1])
         max_days = max(1, int(patient_info.get("days") or 3))
