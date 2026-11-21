@@ -251,6 +251,30 @@ class PreviewEditResponse(BaseModel):
     scored_items: list[ScoredItem] = Field(default_factory=list)
 
 
+class AllowedFoodOut(BaseModel):
+    """Thực phẩm an toàn cho hồ sơ bệnh nhân để chuyên gia thêm hoặc đổi món."""
+
+    id: int
+    code: str = ""
+    name_vi: str
+    food_group: str = "khac"
+    unit_default_g: float = 100.0
+    kcal: float = 0.0
+    protein_g: float = 0.0
+    fat_g: float = 0.0
+    carb_g: float = 0.0
+    fiber_g: float = 0.0
+    sugar_g: float = 0.0
+    sodium_mg: float = 0.0
+    purine_level: str = "low"
+
+
+class AllowedFoodsResponse(BaseModel):
+    """Danh sách thực phẩm an toàn cho một thực đơn."""
+
+    foods: list[AllowedFoodOut] = Field(default_factory=list)
+
+
 class ReviewSubmitRequest(BaseModel):
     """Quyết định duyệt của chuyên gia (approve / edit / reject)."""
 

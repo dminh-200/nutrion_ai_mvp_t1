@@ -9,12 +9,14 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "btn-sheen bg-gradient-to-r from-[#0B4F4A] via-[#0D9488] to-[#14B8A6] text-white shadow-[0_4px_14px_rgba(13,148,136,0.22),inset_0_1px_0_rgba(255,255,255,0.22)] hover:brightness-[1.03] hover:-translate-y-[0.5px] hover:shadow-[0_8px_24px_rgba(13,148,136,0.3)]",
+          "btn-sheen bg-gradient-to-r from-[#0D9488] via-[#0EA5A8] to-[#06B6D4] text-white shadow-[0_6px_18px_rgba(6,182,212,0.28),inset_0_1px_0_rgba(255,255,255,0.28)] hover:brightness-[1.04] hover:-translate-y-[0.5px] hover:shadow-[0_10px_26px_rgba(6,182,212,0.38)]",
         secondary:
-          "border border-[#CDE6DF] bg-[#EAF6F2]/90 text-[#0B4F4A] hover:bg-[#DCF0EA] hover:border-[#99D5C6]",
+          "border border-[#BDE6DC] bg-[#E8F8F4]/90 text-[#0B4F4A] hover:bg-[#D5F2EB] hover:border-[#5EEAD4]",
         outline:
-          "border border-[#D2E4DC] bg-white/85 backdrop-blur-xs text-[#0F172A] shadow-2xs hover:border-[#0D9488]/60 hover:bg-[#F0FDFA]/80",
-        ghost: "text-[#334155] hover:bg-[#EAF6F2] hover:text-[#0B4F4A]",
+          "border border-[#C8E0D8] bg-white/82 backdrop-blur-md text-[#0F172A] shadow-2xs hover:border-[#0D9488]/70 hover:bg-[#ECFEFF]/85",
+        glassDark:
+          "border border-white/25 bg-white/12 text-white backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] hover:border-[#5EEAD4]/60 hover:bg-white/20",
+        ghost: "text-[#334155] hover:bg-[#E6F6F2] hover:text-[#0B4F4A]",
         destructive:
           "bg-gradient-to-r from-[#DC2626] to-[#EF4444] text-white shadow-sm hover:brightness-[1.03] hover:shadow-[0_6px_18px_rgba(220,38,38,0.25)]",
         destructiveOutline:

@@ -1,19 +1,29 @@
 flowchart TD
-    UI["Tầng Giao diện (Streamlit 4 trang)<br/>app/main.py, app/pages/*"] -->|"run_request / resume_review / get_graph_mermaid"| AGENT["Tầng Điều phối (LangGraph 11 node)<br/>agent/graph.py, agent/nodes.py"]
+    WEB["Tầng Giao diện React SPA (5 trang)<br/>web/src/pages/* · Vite + TypeScript + Recharts"] -->|"REST JSON /api/* (proxy 5173 hoặc static dist)"| API["Tầng REST API (FastAPI · 6 router)<br/>api/main.py, api/routes/*<br/>422 Tiếng Việt + Audit Validation"]
 
-    AGENT -->|"Kiểm tra đầu vào / đầu ra"| GUARD["Tầng Guardrails<br/>guardrails/input.py, guardrails/output.py"]
-    AGENT -->|"Span, Generation, Score, QueryLog"| OBS["Tầng Observability<br/>observability/tracing.py (Langfuse v5)<br/>observability/querylog.py"]
-    AGENT -->|"Structured Output / Explain"| LLM["Tầng LLM<br/>agent/llm.py (Gemini / Alibaba / Groq / Mock)"]
-    AGENT -->|"Cân chỉnh & Kiểm chứng"| VERIFY["Core Portion & Verifier<br/>core/portion.py, agent/verifier.py"]
+    API -->|"POST /api/meal-plans/run & /api/reviews/{id}/submit"| AGENT["Tầng Điều phối (LangGraph 11 node + HITL)<br/>agent/graph.py, agent/nodes.py"]
+    API -->|"POST /api/chat"| CHAT["Chatbot Trợ lý Dinh dưỡng (Guardrail 3 mức)<br/>agent/chat.py, prompts/chat_system.txt"]
+    API -->|"Hồ sơ, hàng đợi, Dashboard"| DB[("SQLite + SQLAlchemy 2.x (14 bảng)<br/>db/nutrition.db & db/checkpoints.sqlite")]
 
-    AGENT -->|"TOOLS_MODE=mcp (stdio) | direct"| GW["ToolsGateway<br/>agent/tools_gateway.py"]
-    GW -->|"MCP Python SDK v2 (5 tools)"| MCP["MCP Server<br/>mcp_server/server.py"]
+    AGENT -->|"Lớp vào / lớp ra"| GUARD["Tầng Guardrails 2 lớp<br/>guardrails/input.py, guardrails/output.py"]
+    CHAT -->|"Lọc từ cấm & audit"| GUARD
+    AGENT -->|"Span, Generation, Score, QueryLog"| OBS["Tầng Observability<br/>observability/tracing.py (Langfuse v5)<br/>observability/querylog.py, execution.py"]
+    CHAT -->|"Generation (ẩn nội dung chat)"| OBS
+    AGENT -->|"Structured JSON / Explain"| LLM["Tầng LLM đa provider<br/>agent/llm.py (Alibaba / Gemini / Groq / Mock)<br/>Retry + Rate limit + Disk Cache"]
+    CHAT -->|"OpenAI-compatible / Mock"| LLM
+    AGENT -->|"Cân chỉnh & Kiểm chứng"| VERIFY["Cân chỉnh & Verifier<br/>core/portion.py, agent/verifier.py"]
+
+    AGENT -->|"TOOLS_MODE: mcp (stdio) hoặc direct"| GW["ToolsGateway<br/>agent/tools_gateway.py"]
+    GW -->|"MCP Python SDK v2 (5 tools)"| MCP["MCP Server (stdio)<br/>mcp_server/server.py"]
     MCP --> CORE["Tầng Nghiệp vụ Lõi (Hàm thuần)<br/>core/nutrition.py, classify.py, food.py, allergen.py, scoring.py"]
     MCP --> RAG["Tầng Tri thức (RAG)<br/>rag/retrieve.py, ingest.py, embeddings.py"]
     GW -.->|"direct mode"| CORE
     GW -.->|"direct mode"| RAG
+    CHAT -->|"Lọc món & check_allergen"| CORE
+    CHAT -->|"Truy xuất trích dẫn"| RAG
 
-    CORE --> DB[("SQLite + SQLAlchemy 2.x<br/>db/nutrition.db & checkpoints.sqlite")]
-    RAG --> CHROMA[("ChromaDB PersistentClient<br/>rag/chroma/")]
+    CORE --> DB
+    OBS --> DB
+    RAG --> CHROMA[("ChromaDB PersistentClient<br/>rag/chroma/ (intfloat/multilingual-e5-small)")]
     GUARD --> CFG["Cấu hình YAML & .env<br/>config/*.yaml, config/settings.py"]
     CORE --> CFG

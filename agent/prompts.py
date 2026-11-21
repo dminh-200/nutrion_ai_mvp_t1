@@ -31,7 +31,7 @@ def sanitize_user_data(text: str) -> str:
 
 
 def format_allowed_foods_compact(allowed_foods: list[dict[str, Any]]) -> str:
-    """Định dạng danh sách món được phép dạng gọn: id|tên|kcal/100g|nhóm|tags|xơ_g."""
+    """Định dạng danh sách món được phép dạng gọn kèm macro/natri/đường trên 100g."""
     if not allowed_foods:
         return "Không có món hợp lệ."
     lines: list[str] = []
@@ -44,7 +44,17 @@ def format_allowed_foods_compact(allowed_foods: list[dict[str, Any]]) -> str:
         tags = str(food.get("tags", "")).strip() or "-"
         fiber = food.get("fiber_g")
         fiber_str = f"{float(fiber):.1f}" if fiber is not None else "0.0"
-        lines.append(f"{fid}|{name_vi}|{kcal_str}|{group}|{tags}|{fiber_str}")
+        base = f"{fid}|{name_vi}|{kcal_str}|{group}|{tags}|{fiber_str}"
+        if any(k in food for k in ("protein_g", "fat_g", "carb_g", "sodium_mg")):
+            p_str = _fmt_compact_num(food.get("protein_g"), decimals=1)
+            f_str = _fmt_compact_num(food.get("fat_g"), decimals=1)
+            c_str = _fmt_compact_num(food.get("carb_g"), decimals=1)
+            sg_str = _fmt_compact_num(food.get("sugar_g"), decimals=1)
+            na_str = _fmt_compact_num(food.get("sodium_mg"), decimals=0)
+            purine = str(food.get("purine_level", "low")).strip() or "low"
+            lines.append(f"{base}|{p_str}|{f_str}|{c_str}|{sg_str}|{na_str}|{purine}")
+        else:
+            lines.append(base)
     return "\n".join(lines)
 
 
@@ -140,6 +150,8 @@ def _food_role_bucket(food: dict[str, Any]) -> str:
     if grp == "trai_cay":
         return "fruit"
     if grp == "dau_mo_hat":
+        if float(food.get("fat_g") or 0.0) >= 80.0:
+            return "oil"
         return "fat"
     return "other"
 
@@ -148,7 +160,7 @@ def _curate_foods_for_alibaba(
     allowed_foods: list[dict[str, Any]],
     limit: int = 56,
 ) -> list[dict[str, Any]]:
-    """Chọn tối đa `limit` món đa dạng, cân bằng nhóm và hạn chế trùng lặp/bẫy muối đường."""
+    """Chọn tối đa `limit` món đa dạng, cân bằng nhóm (tách riêng dầu thực vật & hạt)."""
     if len(allowed_foods) <= limit:
         return list(allowed_foods)
 
@@ -156,17 +168,20 @@ def _curate_foods_for_alibaba(
     for food in allowed_foods:
         buckets.setdefault(_food_role_bucket(food), []).append(food)
 
-    def _clean_rank(food: dict[str, Any]) -> tuple[int, int, int, int, float, float, int]:
+    def _clean_rank(food: dict[str, Any]) -> tuple[int, int, int, int, int, float, float, int]:
         na = float(food.get("sodium_mg") or 0.0)
         sg = float(food.get("sugar_g") or 0.0)
         fib = float(food.get("fiber_g") or 0.0)
         grp = str(food.get("food_group") or "").strip().lower()
+        tags = str(food.get("tags") or "").lower()
         is_condiment_trap = 1 if (grp == "mon_che_bien_gia_vi" or na > 500.0) else 0
         is_sugary_trap = 1 if ((grp == "do_uong" and sg > 5.0) or sg > 15.0) else 0
+        is_sat_fat = 1 if "chat_beo_bao_hoa" in tags else 0
         na_bucket = int(na // 25.0)
         return (
             is_condiment_trap,
             is_sugary_trap,
+            is_sat_fat,
             1 if sg > 10.0 else 0,
             na_bucket,
             -min(fib, 12.0),
@@ -178,12 +193,13 @@ def _curate_foods_for_alibaba(
         b_items.sort(key=_clean_rank)
 
     quotas: list[tuple[str, int]] = [
-        ("carb", 14),
+        ("carb", 13),
         ("meat", 9),
         ("seafood", 6),
-        ("protein_other", 8),
+        ("protein_other", 7),
         ("veg", 10),
-        ("fruit", 6),
+        ("fruit", 5),
+        ("oil", 3),
         ("fat", 3),
     ]
     selected: list[dict[str, Any]] = []
@@ -212,7 +228,17 @@ def _curate_foods_for_alibaba(
 
     # Vòng 2: bù tròn nếu nhóm nào bị thiếu (vd dị ứng hải sản) từ các nhóm lành mạnh
     if len(selected) < limit:
-        healthy_order = ["carb", "meat", "protein_other", "veg", "fruit", "seafood", "fat", "other"]
+        healthy_order = [
+            "carb",
+            "meat",
+            "protein_other",
+            "veg",
+            "fruit",
+            "seafood",
+            "oil",
+            "fat",
+            "other",
+        ]
         while len(selected) < limit:
             progressed = False
             for b_name in healthy_order:
@@ -538,6 +564,14 @@ def build_planner_prompt(
             "(trên 100g: id|mã|tên|nhóm|đơn_vị_g|kcal|đạm_g|béo_g|carb_g|xơ_g|natri_mg|purin|tags)",
         )
         rendered += GROQ_PLANNER_SCHEMA_INSTRUCTION
+    elif any(
+        any(k in f for k in ("protein_g", "fat_g", "carb_g", "sodium_mg"))
+        for f in allowed_foods
+    ):
+        rendered = rendered.replace(
+            "(id|tên|kcal/100g|nhóm|tags|xơ_g)",
+            "(trên 100g: id|tên|kcal|nhóm|tags|xơ_g|đạm_g|béo_g|carb_g|đường_g|natri_mg|purin)",
+        )
     return rendered
 
 

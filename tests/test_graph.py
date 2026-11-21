@@ -685,6 +685,8 @@ def test_model_usage_records_active_provider_models(
             monkeypatch.setenv("LLM_MODE", "mock")
             monkeypatch.setenv("TOOLS_MODE", "direct")
             monkeypatch.setenv("LLM_PROVIDER", provider)
+            monkeypatch.setenv("ALIBABA_MODEL", "qwen3.8-flash")
+            monkeypatch.setenv("GROQ_MODEL", "qwen/qwen3.8-27b")
             get_settings.cache_clear()
 
             res = run_request(

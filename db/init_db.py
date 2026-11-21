@@ -34,6 +34,7 @@ def _ensure_meal_plan_columns(engine: Engine) -> None:
             ("risk_json", "TEXT NOT NULL DEFAULT '{}'"),
             ("snippets_json", "TEXT NOT NULL DEFAULT '[]'"),
             ("violations_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ("draft_plan_json", "TEXT NOT NULL DEFAULT '{}'"),
         ):
             if col_name not in cols:
                 conn.exec_driver_sql(f"ALTER TABLE meal_plan ADD COLUMN {col_name} {col_def}")

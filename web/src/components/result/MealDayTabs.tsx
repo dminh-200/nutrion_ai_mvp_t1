@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Coffee, Moon, Sun, Utensils } from "lucide-react";
+import { Clock, Coffee, Moon, Sun, Utensils } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { formatInt, formatMeal, formatNumber } from "@/lib/format";
 import { PAGE_TRANSITION, TAB_SPRING } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -17,35 +18,56 @@ const MEAL_ORDER = ["breakfast", "lunch", "dinner", "snack"] as const;
 
 const MEAL_STYLES: Record<
   string,
-  { icon: typeof Sun; headerBg: string; iconBg: string; titleText: string; badgeClass: string }
+  {
+    icon: typeof Sun;
+    suggestedTime: string;
+    topBar: string;
+    headerBg: string;
+    iconBg: string;
+    titleText: string;
+    timeBadge: string;
+    badgeClass: string;
+  }
 > = {
   breakfast: {
     icon: Coffee,
-    headerBg: "bg-gradient-to-r from-[#FFFBEB]/95 via-[#FEF3C7]/45 to-white/80",
-    iconBg: "bg-gradient-to-br from-[#F59E0B] to-[#D97706] text-white",
+    suggestedTime: "07:00",
+    topBar: "bg-gradient-to-r from-[#F59E0B] via-[#FBBF24] to-[#FB923C]",
+    headerBg: "bg-gradient-to-r from-[#FEF3C7]/85 via-[#FFFBEB]/75 to-white/60",
+    iconBg: "bg-gradient-to-br from-[#F59E0B] to-[#D97706] text-white shadow-[0_4px_12px_rgba(217,119,6,0.28)]",
     titleText: "text-[#92400E]",
-    badgeClass: "border-[#FDE68A] bg-white/90 text-[#92400E]",
+    timeBadge: "border-[#FCD34D] bg-white/85 text-[#B45309]",
+    badgeClass: "border-[#FDE68A] bg-white/95 text-[#92400E]",
   },
   lunch: {
     icon: Sun,
-    headerBg: "bg-gradient-to-r from-[#F0FDFA]/95 via-[#CCFBF1]/50 to-white/80",
-    iconBg: "bg-gradient-to-br from-[#0D9488] to-[#14B8A6] text-white",
+    suggestedTime: "12:00",
+    topBar: "bg-gradient-to-r from-[#0D9488] via-[#14B8A6] to-[#06B6D4]",
+    headerBg: "bg-gradient-to-r from-[#CCFBF1]/85 via-[#ECFEFF]/75 to-white/60",
+    iconBg: "bg-gradient-to-br from-[#0D9488] to-[#06B6D4] text-white shadow-[0_4px_12px_rgba(6,182,212,0.28)]",
     titleText: "text-[#0B4F4A]",
-    badgeClass: "border-[#99F6E4] bg-white/90 text-[#0B4F4A]",
+    timeBadge: "border-[#5EEAD4] bg-white/85 text-[#0F766E]",
+    badgeClass: "border-[#99F6E4] bg-white/95 text-[#0B4F4A]",
   },
   dinner: {
     icon: Moon,
-    headerBg: "bg-gradient-to-r from-[#EFF6FF]/95 via-[#E0E7FF]/45 to-white/80",
-    iconBg: "bg-gradient-to-br from-[#0284C7] to-[#4F46E5] text-white",
+    suggestedTime: "18:30",
+    topBar: "bg-gradient-to-r from-[#0284C7] via-[#3B82F6] to-[#6366F1]",
+    headerBg: "bg-gradient-to-r from-[#DBEAFE]/85 via-[#E0E7FF]/70 to-white/60",
+    iconBg: "bg-gradient-to-br from-[#0284C7] to-[#4F46E5] text-white shadow-[0_4px_12px_rgba(59,130,246,0.28)]",
     titleText: "text-[#1E3A8A]",
-    badgeClass: "border-[#BFDBFE] bg-white/90 text-[#1E40AF]",
+    timeBadge: "border-[#93C5FD] bg-white/85 text-[#1D4ED8]",
+    badgeClass: "border-[#BFDBFE] bg-white/95 text-[#1E40AF]",
   },
   snack: {
     icon: Utensils,
-    headerBg: "bg-gradient-to-r from-[#ECFDF5]/95 via-[#D1FAE5]/50 to-white/80",
-    iconBg: "bg-gradient-to-br from-[#059669] to-[#10B981] text-white",
+    suggestedTime: "15:30",
+    topBar: "bg-gradient-to-r from-[#059669] via-[#10B981] to-[#34D399]",
+    headerBg: "bg-gradient-to-r from-[#D1FAE5]/85 via-[#ECFDF5]/75 to-white/60",
+    iconBg: "bg-gradient-to-br from-[#059669] to-[#10B981] text-white shadow-[0_4px_12px_rgba(16,185,129,0.28)]",
     titleText: "text-[#065F46]",
-    badgeClass: "border-[#A7F3D0] bg-white/90 text-[#065F46]",
+    timeBadge: "border-[#6EE7B7] bg-white/85 text-[#047857]",
+    badgeClass: "border-[#A7F3D0] bg-white/95 text-[#065F46]",
   },
 };
 
@@ -81,13 +103,13 @@ export function MealDayTabs({ items, dailyTotals }: MealDayTabsProps) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-bold text-[#0F172A]">Chi tiết thực đơn từng ngày</h2>
-          <p className="text-xs text-[#64748B]">
+          <p className="text-xs text-[#475569]">
             Toàn bộ định lượng và chỉ số dinh dưỡng được tính trực tiếp từ cơ sở dữ liệu thực phẩm.
           </p>
         </div>
 
         {/* Day Selector Pills with Luminous Sliding Indicator */}
-        <div className="flex flex-wrap gap-1 rounded-xl border border-[#DCEAE4] bg-[#EFF7F4]/90 p-1">
+        <div className="flex flex-wrap gap-1 rounded-xl border border-white/85 bg-white/75 backdrop-blur-xl p-1 ring-1 ring-[#0D9488]/12 shadow-2xs">
           {days.map((d) => {
             const dt = dailyTotals.find((x) => x.day === d);
             const active = selectedDay === d;
@@ -105,7 +127,7 @@ export function MealDayTabs({ items, dailyTotals }: MealDayTabsProps) {
                   <motion.span
                     layoutId="meal-day-pill"
                     transition={TAB_SPRING}
-                    className="absolute inset-0 rounded-lg bg-gradient-to-r from-[#0B4F4A] via-[#0D9488] to-[#14B8A6] shadow-[0_4px_12px_rgba(13,148,136,0.28)]"
+                    className="absolute inset-0 rounded-lg bg-gradient-to-r from-[#0D9488] via-[#0EA5A8] to-[#06B6D4] shadow-[0_4px_14px_rgba(6,182,212,0.34)]"
                   />
                 )}
                 <span className="relative z-10">
@@ -118,7 +140,7 @@ export function MealDayTabs({ items, dailyTotals }: MealDayTabsProps) {
         </div>
       </div>
 
-      {/* Meal Cards with Time-of-Day Header Tints */}
+      {/* Meal Cards with Time-of-Day Strips, Suggested Hours & Spotlight */}
       <AnimatePresence mode="wait">
         <motion.div
           key={selectedDay}
@@ -134,32 +156,44 @@ export function MealDayTabs({ items, dailyTotals }: MealDayTabsProps) {
             const mealKcal = mealItems.reduce((acc, it) => acc + it.kcal, 0);
 
             return (
-              <Card
+              <SpotlightCard
                 key={mealCode}
-                className="flex flex-col overflow-hidden hover:-translate-y-0.5 hover:border-[#99D5C6] hover:shadow-[0_12px_30px_rgba(11,79,74,0.09)]"
+                className="flex flex-col rounded-2xl border border-white/85 bg-white/78 backdrop-blur-2xl ring-1 ring-[#0D9488]/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_12px_32px_-4px_rgba(11,79,74,0.1)] transition-all duration-200 hover:-translate-y-0.5 hover:ring-[#14B8A6]/35 hover:shadow-[0_16px_34px_rgba(11,79,74,0.14)]"
               >
+                <div className={cn("h-[3.5px] w-full", style.topBar)} />
                 <CardHeader
                   className={cn(
-                    "flex flex-row items-center justify-between border-b border-[#E6F0EC] pb-3",
+                    "flex flex-row items-center justify-between gap-2 border-b border-[#DCECE6] py-3.5",
                     style.headerBg
                   )}
                 >
                   <CardTitle className={cn("flex items-center gap-2 text-sm font-bold", style.titleText)}>
                     <span
                       className={cn(
-                        "flex h-7 w-7 items-center justify-center rounded-lg shadow-2xs",
+                        "flex h-7.5 w-7.5 items-center justify-center rounded-lg",
                         style.iconBg
                       )}
                     >
                       <Icon className="h-4 w-4" />
                     </span>
-                    {formatMeal(mealCode)}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span>{formatMeal(mealCode)}</span>
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[10.5px] font-bold tabular-nums",
+                          style.timeBadge
+                        )}
+                      >
+                        <Clock className="h-2.5 w-2.5" />
+                        {style.suggestedTime}
+                      </span>
+                    </div>
                   </CardTitle>
-                  <Badge className={cn("font-mono tabular-nums", style.badgeClass)}>
+                  <Badge className={cn("font-mono tabular-nums shadow-2xs", style.badgeClass)}>
                     {formatInt(mealKcal)} kcal
                   </Badge>
                 </CardHeader>
-                <CardContent className="divide-y divide-[#EDF4F0] pt-1">
+                <CardContent className="divide-y divide-[#E4F0EC] pt-1">
                   {mealItems.map((it, idx) => {
                     const pCal = Math.max(0, it.protein_g * 4);
                     const cCal = Math.max(0, it.carb_g * 4);
@@ -175,14 +209,14 @@ export function MealDayTabs({ items, dailyTotals }: MealDayTabsProps) {
                           <span className="text-sm font-semibold text-[#0F172A] leading-snug">
                             {it.name_vi}
                           </span>
-                          <span className="shrink-0 rounded-lg border border-[#CDE6DF] bg-[#F0FDFA] px-2.5 py-0.5 font-mono text-xs font-bold text-[#0B4F4A] tabular-nums">
+                          <span className="shrink-0 rounded-lg border border-[#BCE5DA] bg-[#ECFEFF]/90 px-2.5 py-0.5 font-mono text-xs font-bold text-[#0B4F4A] tabular-nums">
                             {formatNumber(it.grams, 0)} g
                           </span>
                         </div>
 
                         {/* Macro proportion micro-strip */}
                         <div
-                          className="flex h-1.5 w-full overflow-hidden rounded-full bg-[#EDF2EF]"
+                          className="flex h-1.5 w-full overflow-hidden rounded-full bg-[#E4EFEA]"
                           title={`Đạm ${Math.round((pCal / totCal) * 100)}% · Carb ${Math.round((cCal / totCal) * 100)}% · Béo ${Math.round((fCal / totCal) * 100)}%`}
                         >
                           <div className="bg-[#0D9488]" style={{ width: `${(pCal / totCal) * 100}%` }} />
@@ -191,19 +225,19 @@ export function MealDayTabs({ items, dailyTotals }: MealDayTabsProps) {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px] tabular-nums">
-                          <span className="rounded-md border border-[#CCFBF1] bg-[#F0FDFA] px-1.5 py-0.5 font-bold text-[#0B4F4A]">
+                          <span className="rounded-md border border-[#99F6E4] bg-[#F0FDFA] px-1.5 py-0.5 font-bold text-[#0B4F4A]">
                             {formatNumber(it.kcal, 1)} kcal
                           </span>
-                          <span className="rounded-md border border-[#D1FAE5] bg-[#ECFDF5]/80 px-1.5 py-0.5 text-[#065F46]">
+                          <span className="rounded-md border border-[#D1FAE5] bg-[#ECFDF5]/85 px-1.5 py-0.5 text-[#065F46]">
                             Đạm {formatNumber(it.protein_g, 1)}g
                           </span>
-                          <span className="rounded-md border border-[#E0F2FE] bg-[#F0F9FF]/80 px-1.5 py-0.5 text-[#0369A1]">
+                          <span className="rounded-md border border-[#E0F2FE] bg-[#F0F9FF]/85 px-1.5 py-0.5 text-[#0369A1]">
                             Carb {formatNumber(it.carb_g, 1)}g
                           </span>
-                          <span className="rounded-md border border-[#FEF3C7] bg-[#FFFBEB]/80 px-1.5 py-0.5 text-[#92400E]">
+                          <span className="rounded-md border border-[#FEF3C7] bg-[#FFFBEB]/85 px-1.5 py-0.5 text-[#92400E]">
                             Béo {formatNumber(it.fat_g, 1)}g
                           </span>
-                          <span className="text-[#64748B] px-0.5">
+                          <span className="text-[#475569] px-0.5">
                             Xơ {formatNumber(it.fiber_g, 1)}g · Na {formatInt(it.sodium_mg)}mg
                           </span>
                         </div>
@@ -211,23 +245,23 @@ export function MealDayTabs({ items, dailyTotals }: MealDayTabsProps) {
                     );
                   })}
                 </CardContent>
-              </Card>
+              </SpotlightCard>
             );
           })}
         </motion.div>
       </AnimatePresence>
 
-      {/* Bonus 4: Glass Summary Dock */}
+      {/* Luminous Glass Summary Dock */}
       {dayTotal && (
-        <div className="glass-surface rounded-2xl border-[#BDE3D8] bg-gradient-to-r from-[#F0FDFA]/92 via-white/88 to-[#E0F2FE]/70 px-4 py-3.5">
+        <div className="glass-surface overflow-hidden rounded-2xl px-4 py-3.5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="h-2.5 w-2.5 rounded-full bg-gradient-to-r from-[#0B4F4A] to-[#14B8A6] shadow-[0_0_8px_rgba(20,184,166,0.6)]" />
-              <span className="text-xs font-extrabold uppercase tracking-wide text-[#0B4F4A]">
-                Tổng dinh dưỡng Ngày {selectedDay}
+            <div className="inline-flex items-center gap-2 self-start rounded-xl bg-gradient-to-r from-[#042F2E] to-[#0F766E] px-3 py-1.5 text-white shadow-[0_4px_14px_rgba(4,47,46,0.2)] lg:self-auto shrink-0">
+              <span className="h-2 w-2 rounded-full bg-[#2DD4BF] shadow-[0_0_8px_rgba(45,212,191,0.9)]" />
+              <span className="text-xs font-extrabold uppercase tracking-wide">
+                Tổng Ngày {selectedDay}
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-7">
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-7 flex-1 lg:max-w-4xl">
               {[
                 { label: "Năng lượng", val: `${formatInt(dayTotal.kcal)} kcal`, tone: "text-[#0B4F4A]" },
                 { label: "Đạm", val: `${formatNumber(dayTotal.protein_g, 1)}g`, tone: "text-[#047857]" },
@@ -239,7 +273,7 @@ export function MealDayTabs({ items, dailyTotals }: MealDayTabsProps) {
               ].map((m) => (
                 <div
                   key={m.label}
-                  className="rounded-xl border border-[#DCEAE4] bg-white/85 px-2.5 py-1.5 text-center shadow-2xs"
+                  className="rounded-xl border border-white/90 bg-white/82 px-2.5 py-1.5 text-center ring-1 ring-[#0D9488]/10 shadow-2xs"
                 >
                   <span className="block text-[10px] font-semibold uppercase text-[#64748B]">
                     {m.label}

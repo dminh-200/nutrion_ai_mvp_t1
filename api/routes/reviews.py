@@ -7,6 +7,8 @@ from fastapi import APIRouter, HTTPException
 from agent.graph import resume_review
 from api.routes.meal_plans import build_enriched_meal_plan_detail
 from api.schemas import (
+    AllowedFoodOut,
+    AllowedFoodsResponse,
     DailyTotalOut,
     PreviewEditRequest,
     PreviewEditResponse,
@@ -15,12 +17,28 @@ from api.schemas import (
 )
 from core.schemas import ScoredItem, Violation
 from db.repo import (
+    get_allowed_foods_for_plan,
     get_meal_plan_detail,
     preview_and_verify_edited_items,
     record_review_for_finalized_plan,
 )
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
+
+
+@router.get("/{meal_plan_id}/allowed-foods", response_model=AllowedFoodsResponse)
+def list_allowed_foods_for_review(
+    meal_plan_id: int,
+    q: str = "",
+) -> AllowedFoodsResponse:
+    """Lấy danh sách thực phẩm an toàn (đã lọc dị ứng/purin/avoid_tags) để thêm/đổi món."""
+    try:
+        rows = get_allowed_foods_for_plan(meal_plan_id, query=q)
+    except ValueError as exc:
+        msg = str(exc)
+        code = 404 if "Không tìm thấy" in msg else 400
+        raise HTTPException(status_code=code, detail=msg) from exc
+    return AllowedFoodsResponse(foods=[AllowedFoodOut(**r) for r in rows])
 
 
 @router.post("/{meal_plan_id}/preview-edit", response_model=PreviewEditResponse)

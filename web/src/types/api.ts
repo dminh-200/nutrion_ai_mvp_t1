@@ -239,6 +239,22 @@ export interface PreviewEditResponse {
   }>;
 }
 
+export interface AllowedFood {
+  id: number;
+  code: string;
+  name_vi: string;
+  food_group: string;
+  unit_default_g: number;
+  kcal: number;
+  protein_g: number;
+  fat_g: number;
+  carb_g: number;
+  fiber_g: number;
+  sugar_g: number;
+  sodium_mg: number;
+  purine_level: string;
+}
+
 export interface ReviewSubmitRequest {
   decision: "approve" | "edit" | "reject";
   reviewer_name: string;

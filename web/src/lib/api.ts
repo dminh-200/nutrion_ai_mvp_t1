@@ -1,4 +1,5 @@
 import type {
+  AllowedFood,
   ChatRequest,
   ChatResponse,
   DashboardResponse,
@@ -66,6 +67,13 @@ export const apiClient = {
     return requestJson<MealPlanListResponse>(`/api/meal-plans?${params.toString()}`);
   },
   getMealPlanDetail: (id: number) => requestJson<MealPlanDetailResponse>(`/api/meal-plans/${id}`),
+  getAllowedFoods: async (mealPlanId: number, query = ""): Promise<AllowedFood[]> => {
+    const qs = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : "";
+    const res = await requestJson<{ foods: AllowedFood[] }>(
+      `/api/reviews/${mealPlanId}/allowed-foods${qs}`
+    );
+    return res.foods;
+  },
   previewEdit: (mealPlanId: number, editedItems: EditedItemInput[]) =>
     requestJson<PreviewEditResponse>(`/api/reviews/${mealPlanId}/preview-edit`, {
       method: "POST",

@@ -32,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { apiClient } from "@/lib/api";
 import { formatCondition, formatInt, formatNumber, formatStatus } from "@/lib/format";
 import { STAGGER_CONTAINER, STAGGER_ITEM } from "@/lib/motion";
@@ -367,8 +368,8 @@ export function ChatPage({
         title="Hỏi đáp thực đơn, đổi món & kiến thức dinh dưỡng"
         description="Giải đáp dựa trên hồ sơ thực đơn đang mở, cơ sở dữ liệu món ăn và tài liệu hướng dẫn y khoa."
         rightSlot={
-          <Button variant="outline" size="sm" onClick={handleResetChat} disabled={sending}>
-            <RotateCcw className="h-3.5 w-3.5" />
+          <Button variant="glassDark" size="sm" onClick={handleResetChat} disabled={sending}>
+            <RotateCcw className="h-3.5 w-3.5 text-[#5EEAD4]" />
             Cuộc trò chuyện mới
           </Button>
         }
@@ -439,21 +440,32 @@ export function ChatPage({
         </CardContent>
       </Card>
 
-      {/* Main Luminous Glass Chat Window */}
-      <Card className="glass-surface flex h-[calc(100vh-360px)] min-h-[390px] max-h-[540px] flex-col overflow-hidden">
+      {/* Main Luminous Glass Studio Chat Window */}
+      <Card className="glass-surface flex h-[calc(100vh-355px)] min-h-[380px] max-h-[530px] flex-col overflow-hidden">
         <div
           ref={scrollContainerRef}
-          className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-5 bg-gradient-to-b from-[#F4FBF8]/75 via-[#FAFDFB]/60 to-white/55"
+          className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-5 bg-gradient-to-b from-[#ECFAF6]/55 via-white/45 to-white/35"
         >
           {turns.length === 0 ? (
             <div className="flex h-full min-h-[240px] flex-col items-center justify-center text-center px-2">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#0B4F4A] via-[#0D9488] to-[#14B8A6] text-white shadow-[0_6px_20px_rgba(13,148,136,0.28)]">
-                <MessageSquareHeart className="h-6 w-6" />
+              <div className="relative flex items-center justify-center">
+                {/* Soft Aurora Halo */}
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute -inset-7 rounded-full opacity-70 blur-2xl"
+                  style={{
+                    background:
+                      "radial-gradient(circle, rgba(34, 211, 238, 0.45) 0%, rgba(52, 211, 153, 0.34) 50%, transparent 72%)",
+                  }}
+                />
+                <div className="relative flex h-13 w-13 items-center justify-center rounded-2xl border border-white/60 bg-gradient-to-br from-[#042F2E] via-[#0D9488] to-[#06B6D4] text-white shadow-[0_10px_28px_rgba(6,182,212,0.34),inset_0_1px_0_rgba(255,255,255,0.35)]">
+                  <MessageSquareHeart className="h-6 w-6" />
+                </div>
               </div>
-              <h3 className="mt-3 text-base font-bold text-[#0F172A]">
+              <h3 className="mt-3.5 text-base font-extrabold tracking-tight text-[#0F172A]">
                 Xin chào! Tôi có thể hỗ trợ gì cho bữa ăn của bạn?
               </h3>
-              <p className="mt-1 max-w-md text-xs leading-relaxed text-[#64748B]">
+              <p className="mt-1 max-w-md text-xs leading-relaxed text-[#475569]">
                 Bạn có thể hỏi về chỉ số BMI/TDEE, cách chế biến món ăn, gợi ý đổi món phù hợp
                 dị ứng hoặc kiến thức dinh dưỡng bệnh lý.
               </p>
@@ -462,23 +474,25 @@ export function ChatPage({
                 variants={STAGGER_CONTAINER}
                 initial="hidden"
                 animate="show"
-                className="mt-5 grid w-full max-w-2xl grid-cols-1 gap-2.5 sm:grid-cols-2"
+                className="mt-4 grid w-full max-w-2xl grid-cols-1 gap-2.5 sm:grid-cols-2"
               >
                 {starterPrompts.map((prompt) => (
-                  <motion.button
-                    key={prompt}
-                    variants={STAGGER_ITEM}
-                    type="button"
-                    onClick={() => handleSend(prompt)}
-                    disabled={sending}
-                    className="group flex items-start justify-between gap-2 rounded-xl border border-[#D4E7E0] bg-white/90 p-3 text-left text-xs font-medium text-[#1E293B] shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_2px_8px_rgba(11,79,74,0.04)] transition-all duration-150 hover:-translate-y-0.5 hover:border-[#14B8A6] hover:bg-[#F0FDFA]/90 hover:shadow-[0_8px_20px_rgba(13,148,136,0.12)] active:scale-[0.99] cursor-pointer"
-                  >
-                    <span className="flex items-start gap-2">
-                      <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#14B8A6] transition-transform group-hover:scale-110" />
-                      <span>{prompt}</span>
-                    </span>
-                    <ArrowRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#0D9488] opacity-0 -translate-x-1 transition-all group-hover:opacity-100 group-hover:translate-x-0" />
-                  </motion.button>
+                  <motion.div key={prompt} variants={STAGGER_ITEM}>
+                    <SpotlightCard className="h-full rounded-xl border border-white/90 bg-white/82 backdrop-blur-xl ring-1 ring-[#0D9488]/12 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_4px_14px_rgba(11,79,74,0.06)] transition-all duration-150 hover:-translate-y-0.5 hover:ring-[#06B6D4]/45 hover:shadow-[0_10px_24px_rgba(6,182,212,0.14)]">
+                      <button
+                        type="button"
+                        onClick={() => handleSend(prompt)}
+                        disabled={sending}
+                        className="group flex h-full w-full items-start justify-between gap-2 p-3 text-left text-xs font-medium text-[#1E293B] active:scale-[0.99] cursor-pointer"
+                      >
+                        <span className="flex items-start gap-2">
+                          <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#0D9488] transition-transform group-hover:scale-110 group-hover:text-[#06B6D4]" />
+                          <span>{prompt}</span>
+                        </span>
+                        <ArrowRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#06B6D4] opacity-0 -translate-x-1 transition-all group-hover:opacity-100 group-hover:translate-x-0" />
+                      </button>
+                    </SpotlightCard>
+                  </motion.div>
                 ))}
               </motion.div>
             </div>
@@ -504,7 +518,7 @@ export function ChatPage({
                     className={cn(
                       "group relative max-w-[88%] sm:max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
                       isUser
-                        ? "bg-gradient-to-r from-[#0B4F4A] via-[#0D9488] to-[#14B8A6] text-white rounded-tr-sm shadow-[0_6px_18px_rgba(13,148,136,0.24)]"
+                        ? "bg-gradient-to-r from-[#0D9488] via-[#0EA5A8] to-[#06B6D4] text-white rounded-tr-sm shadow-[0_6px_18px_rgba(6,182,212,0.28)]"
                         : cn(
                             "border bg-white/95 backdrop-blur-sm text-[#1E293B] rounded-tl-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_4px_14px_rgba(11,79,74,0.06)]",
                             turn.tier === "hard_block"
@@ -612,41 +626,43 @@ export function ChatPage({
           )}
         </div>
 
-        {/* Input Composer */}
-        <div className="border-t border-[#DCEAE4] bg-white/90 backdrop-blur-md p-3.5 sm:px-4 sm:py-3">
-          <div className="flex items-end gap-2">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              rows={2}
-              maxLength={800}
-              disabled={sending}
-              placeholder="Nhập câu hỏi về thực đơn, đổi món, cách chế biến hoặc dinh dưỡng..."
-              aria-label="Nhập câu hỏi cho Trợ lý Dinh dưỡng"
-              className="flex-1 resize-none rounded-xl border border-[#D2E4DC] bg-[#F7FCFA] px-3.5 py-2.5 text-sm text-[#0F172A] placeholder:text-[#94A3B8] transition-colors focus:border-[#0D9488] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#14B8A6]/20"
-            />
-            <Button
-              type="button"
-              onClick={() => handleSend()}
-              disabled={sending || !input.trim()}
-              className="h-11 px-4 shrink-0"
-            >
-              <SendHorizontal className="h-4 w-4" />
-              <span className="hidden sm:inline">Gửi</span>
-            </Button>
+        {/* Luminous Floating Dock Composer */}
+        <div className="border-t border-white/75 bg-white/55 backdrop-blur-xl px-3.5 py-3 sm:px-4">
+          <div className="rounded-2xl bg-gradient-to-r from-[#CBE4DC] via-[#CBE4DC] to-[#CBE4DC] p-[1.5px] shadow-[0_8px_24px_-6px_rgba(11,79,74,0.12)] transition-all duration-200 focus-within:from-[#0D9488] focus-within:via-[#0EA5A8] focus-within:to-[#06B6D4] focus-within:shadow-[0_0_26px_rgba(6,182,212,0.26)]">
+            <div className="flex items-end gap-2 rounded-[14.5px] bg-white/95 p-2 backdrop-blur-md">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                rows={2}
+                maxLength={800}
+                disabled={sending}
+                placeholder="Nhập câu hỏi về thực đơn, đổi món, cách chế biến hoặc dinh dưỡng..."
+                aria-label="Nhập câu hỏi cho Trợ lý Dinh dưỡng"
+                className="flex-1 resize-none bg-transparent px-2.5 py-1.5 text-sm text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none"
+              />
+              <Button
+                type="button"
+                onClick={() => handleSend()}
+                disabled={sending || !input.trim()}
+                className="h-10 px-4 shrink-0"
+              >
+                <SendHorizontal className="h-4 w-4" />
+                <span className="hidden sm:inline">Gửi</span>
+              </Button>
+            </div>
           </div>
-          <div className="mt-2 flex items-center justify-between gap-3">
-            <span className="text-[11px] text-[#64748B]">
-              Nhấn <kbd className="rounded border border-[#D5E2DC] bg-[#F8FAF9] px-1 py-0.2 font-mono text-[10px]">Enter</kbd> để gửi ·{" "}
-              <kbd className="rounded border border-[#D5E2DC] bg-[#F8FAF9] px-1 py-0.2 font-mono text-[10px]">Shift+Enter</kbd> xuống dòng
+          <div className="mt-2 flex items-center justify-between gap-3 px-1">
+            <span className="text-[11px] text-[#475569]">
+              Nhấn <kbd className="rounded border border-[#CBE4DC] bg-white/90 px-1 py-0.2 font-mono text-[10px]">Enter</kbd> để gửi ·{" "}
+              <kbd className="rounded border border-[#CBE4DC] bg-white/90 px-1 py-0.2 font-mono text-[10px]">Shift+Enter</kbd> xuống dòng
             </span>
             <div className="flex items-center gap-2 shrink-0">
-              <div className="h-1 w-16 overflow-hidden rounded-full bg-[#E6F0EC]">
+              <div className="h-1 w-16 overflow-hidden rounded-full bg-[#DCECE6]">
                 <div
                   className={cn(
                     "h-full rounded-full transition-all duration-150",
-                    charPct >= 95 ? "bg-[#DC2626]" : charPct >= 80 ? "bg-[#D97706]" : "bg-[#14B8A6]"
+                    charPct >= 95 ? "bg-[#DC2626]" : charPct >= 80 ? "bg-[#D97706]" : "bg-gradient-to-r from-[#0D9488] to-[#06B6D4]"
                   )}
                   style={{ width: `${charPct}%` }}
                 />
@@ -658,7 +674,7 @@ export function ChatPage({
                     ? "font-bold text-[#DC2626]"
                     : charPct >= 80
                       ? "font-semibold text-[#D97706]"
-                      : "text-[#94A3B8]"
+                      : "text-[#64748B]"
                 )}
               >
                 {input.length}/800

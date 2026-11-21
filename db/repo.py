@@ -37,6 +37,7 @@ def create_meal_plan(
     risk_json: str = "{}",
     snippets_json: str = "[]",
     violations_json: str = "[]",
+    draft_plan_json: str = "{}",
     explanation_md: str = "",
     retry_count: int = 0,
     verifier_passed_first_try: bool = False,
@@ -51,6 +52,7 @@ def create_meal_plan(
         risk_json=risk_json,
         snippets_json=snippets_json,
         violations_json=violations_json,
+        draft_plan_json=draft_plan_json,
         explanation_md=explanation_md,
         retry_count=retry_count,
         verifier_passed_first_try=verifier_passed_first_try,
@@ -76,6 +78,7 @@ def update_meal_plan_status(
     risk_json: str | None = None,
     snippets_json: str | None = None,
     violations_json: str | None = None,
+    draft_plan_json: str | None = None,
 ) -> MealPlan | None:
     """Cập nhật trạng thái và thông tin liên quan của meal_plan."""
     plan = session.get(MealPlan, meal_plan_id)
@@ -94,6 +97,8 @@ def update_meal_plan_status(
         plan.snippets_json = snippets_json
     if violations_json is not None:
         plan.violations_json = violations_json
+    if draft_plan_json is not None:
+        plan.draft_plan_json = draft_plan_json
     session.flush()
     return plan
 
@@ -415,6 +420,185 @@ def list_meal_plans_for_ui(
         return _query(sess)
 
 
+def _parse_draft_plan_json(raw_json: str | None) -> Any | None:
+    """Đọc MealPlanLLM bản nháp từ draft_plan_json nếu hợp lệ và có ngày ăn."""
+    if not raw_json or not raw_json.strip():
+        return None
+    try:
+        data = json.loads(raw_json)
+        if not isinstance(data, dict) or data.get("cannot_plan") or not data.get("days"):
+            return None
+        from core.schemas import MealPlanLLM
+
+        plan_obj = MealPlanLLM.model_validate(data)
+        return plan_obj if (not plan_obj.cannot_plan and plan_obj.days) else None
+    except Exception:
+        return None
+
+
+def _build_approved_explanation_md(
+    plan: MealPlan,
+    verification: dict[str, Any],
+    *,
+    note: str = "",
+    session: Session | None = None,
+) -> str:
+    """Tạo nội dung giải thích có trích nguồn chuẩn khi ca needs_human_review được duyệt."""
+    from agent.llm import call_explain_llm
+    from core.food import load_food_db_from_sqlite
+    from core.schemas import GuidelineSnippet, MealPlanLLM, NeedsResult, NutritionTargets
+    from guardrails.output import evaluate_output_guardrail
+
+    try:
+        targets = NutritionTargets(**json.loads(plan.targets_json or "{}"))
+        needs = NeedsResult(**json.loads(plan.needs_json or "{}"))
+        raw_snips = json.loads(getattr(plan, "snippets_json", "[]") or "[]")
+        snippets = [
+            GuidelineSnippet.model_validate(s) for s in raw_snips if isinstance(s, dict)
+        ]
+        verified_plan = MealPlanLLM.model_validate(verification.get("plan_llm") or {"days": []})
+        food_db = load_food_db_from_sqlite(session=session)
+        food_name_map = {int(f["id"]): str(f.get("name_vi", "")) for f in food_db if "id" in f}
+
+        text, _ = call_explain_llm(
+            needs=needs,
+            targets=targets,
+            snippets=snippets,
+            plan_scored=verification.get("daily_totals") or [],
+            plan_llm=verified_plan,
+            food_name_map=food_name_map,
+            mode="mock",
+        )
+        notice_vi = (
+            f"*Ghi chú thẩm định chuyên gia: {note.strip()}*" if note and note.strip() else ""
+        )
+        out = evaluate_output_guardrail(
+            explanation_md=text,
+            snippets=snippets,
+            targets=targets,
+            plan_llm=verified_plan,
+            plan_scored=verification.get("daily_totals") or [],
+            allowed_foods=food_db,
+            violations=[],
+            notice_vi=notice_vi,
+            log_events=False,
+        )
+        return out.explanation_md
+    except Exception:
+        from guardrails.input import load_guardrails_config
+
+        disclaimer = str(load_guardrails_config().get("disclaimer_vi", "")).strip()
+        note_line = f"\n\n*Ghi chú chuyên gia: {note.strip()}*" if note and note.strip() else ""
+        return (
+            "Thực đơn đã được chuyên gia dinh dưỡng điều chỉnh định lượng và phê duyệt "
+            f"đạt chuẩn kiểm chứng lâm sàng.{note_line}\n\n---\n{disclaimer}"
+        )
+
+
+def get_allowed_foods_for_plan(
+    meal_plan_id: int,
+    query: str = "",
+    session: Session | None = None,
+) -> list[dict[str, Any]]:
+    """Trả về danh sách thực phẩm an toàn cho hồ sơ của meal_plan để chuyên gia thêm/đổi món."""
+    from unidecode import unidecode
+
+    from core.classify import classify_needs
+    from core.food import get_allowed_foods, load_food_db_from_sqlite
+    from core.schemas import NeedsResult, PatientProfile
+    from db.session import get_session
+
+    def _query(sess: Session) -> list[dict[str, Any]]:
+        plan = sess.get(MealPlan, meal_plan_id)
+        if plan is None:
+            raise ValueError(f"Không tìm thấy meal_plan có id={meal_plan_id}")
+        prof = sess.get(HealthProfile, plan.profile_id)
+        if prof is None:
+            raise ValueError(f"Không tìm thấy health_profile cho meal_plan={meal_plan_id}")
+        pat = sess.get(Patient, prof.patient_id)
+
+        cond_codes = list(
+            sess.scalars(
+                select(Condition.code)
+                .join(ProfileCondition, Condition.id == ProfileCondition.condition_id)
+                .where(ProfileCondition.profile_id == prof.id)
+            ).all()
+        )
+        allergen_codes = list(
+            sess.scalars(
+                select(Allergen.code)
+                .join(ProfileAllergen, Allergen.id == ProfileAllergen.allergen_id)
+                .where(ProfileAllergen.profile_id == prof.id)
+            ).all()
+        )
+
+        needs_obj: NeedsResult | None = None
+        try:
+            needs_dict = json.loads(plan.needs_json or "{}")
+            if isinstance(needs_dict, dict) and needs_dict.get("needs"):
+                needs_obj = NeedsResult(**needs_dict)
+        except Exception:
+            needs_obj = None
+
+        if needs_obj is None:
+            p_obj = PatientProfile(
+                patient_code=pat.code if pat else "P_EDIT",
+                age=prof.age,
+                sex=prof.sex,  # type: ignore[arg-type]
+                height_cm=prof.height_cm,
+                weight_kg=prof.weight_kg,
+                activity_level=prof.activity_level,  # type: ignore[arg-type]
+                conditions=cond_codes,  # type: ignore[arg-type]
+                allergens=allergen_codes,  # type: ignore[arg-type]
+                pregnancy=prof.pregnancy,
+                lactating=prof.lactating,
+                ckd_stage=prof.ckd_stage,
+                dialysis=prof.dialysis,
+                eating_disorder=prof.eating_disorder,
+                preferences_text=prof.preferences_text,
+                days=prof.days,
+            )
+            needs_obj = classify_needs(p_obj)
+
+        food_db = load_food_db_from_sqlite(session=sess)
+        allowed = get_allowed_foods(
+            needs=needs_obj,
+            allergens=allergen_codes,
+            limit=250,
+            food_db=food_db,
+        )
+        q_norm = unidecode(query).strip().lower() if query else ""
+        results: list[dict[str, Any]] = []
+        for f in allowed:
+            if q_norm:
+                hay = unidecode(f"{f.get('name_vi', '')} {f.get('food_group', '')}").lower()
+                if q_norm not in hay:
+                    continue
+            results.append(
+                {
+                    "id": int(f["id"]),
+                    "code": str(f.get("code", "")),
+                    "name_vi": str(f.get("name_vi", "")),
+                    "food_group": str(f.get("food_group", "khac")),
+                    "unit_default_g": float(f.get("unit_default_g") or 100.0),
+                    "kcal": round(float(f.get("kcal") or 0.0), 1),
+                    "protein_g": round(float(f.get("protein_g") or 0.0), 1),
+                    "fat_g": round(float(f.get("fat_g") or 0.0), 1),
+                    "carb_g": round(float(f.get("carb_g") or 0.0), 1),
+                    "fiber_g": round(float(f.get("fiber_g") or 0.0), 1),
+                    "sugar_g": round(float(f.get("sugar_g") or 0.0), 1),
+                    "sodium_mg": round(float(f.get("sodium_mg") or 0.0), 1),
+                    "purine_level": str(f.get("purine_level", "low")),
+                }
+            )
+        return results
+
+    if session is not None:
+        return _query(session)
+    with get_session() as sess:
+        return _query(sess)
+
+
 def get_meal_plan_detail(
     meal_plan_id: int,
     session: Session | None = None,
@@ -544,6 +728,66 @@ def get_meal_plan_detail(
             day_accum[it.day]["carb_g"] += it.carb_g
             day_accum[it.day]["sodium_mg"] += it.sodium_mg
 
+        if not items_list and plan.status not in ("redirect_to_doctor", "blocked"):
+            draft_plan = _parse_draft_plan_json(getattr(plan, "draft_plan_json", "{}"))
+            if draft_plan is not None:
+                from db.models import FoodNutrient
+
+                food_rows = sess.execute(
+                    select(Food, FoodNutrient).join(
+                        FoodNutrient, Food.id == FoodNutrient.food_id
+                    )
+                ).all()
+                food_map = {int(f_row.id): (f_row, n_row) for f_row, n_row in food_rows}
+                synthetic_id = 1
+                for day_plan in draft_plan.days:
+                    d_num = int(day_plan.day)
+                    for meal_obj in day_plan.meals:
+                        m_name = str(meal_obj.meal)
+                        for p_item in meal_obj.items:
+                            fid = int(p_item.food_id)
+                            pair = food_map.get(fid)
+                            if pair is None:
+                                continue
+                            f_row, n_row = pair
+                            grams = float(p_item.grams)
+                            ratio = grams / 100.0
+                            kcal = round(float(n_row.kcal or 0.0) * ratio, 1)
+                            prot = round(float(n_row.protein_g or 0.0) * ratio, 1)
+                            fat = round(float(n_row.fat_g or 0.0) * ratio, 1)
+                            carb = round(float(n_row.carb_g or 0.0) * ratio, 1)
+                            sod = round(float(n_row.sodium_mg or 0.0) * ratio, 1)
+                            item_dict = {
+                                "id": synthetic_id,
+                                "day": d_num,
+                                "meal": m_name,
+                                "food_id": fid,
+                                "name_vi": f_row.name_vi,
+                                "grams": grams,
+                                "kcal": kcal,
+                                "protein_g": prot,
+                                "fat_g": fat,
+                                "carb_g": carb,
+                                "sodium_mg": sod,
+                            }
+                            synthetic_id += 1
+                            items_list.append(item_dict)
+                            by_day.setdefault(d_num, {}).setdefault(m_name, []).append(item_dict)
+                            if d_num not in day_accum:
+                                day_accum[d_num] = {
+                                    "day": d_num,
+                                    "kcal": 0.0,
+                                    "protein_g": 0.0,
+                                    "fat_g": 0.0,
+                                    "carb_g": 0.0,
+                                    "sodium_mg": 0.0,
+                                }
+                            day_accum[d_num]["kcal"] += kcal
+                            day_accum[d_num]["protein_g"] += prot
+                            day_accum[d_num]["fat_g"] += fat
+                            day_accum[d_num]["carb_g"] += carb
+                            day_accum[d_num]["sodium_mg"] += sod
+
         daily_totals = [
             {
                 "day": d,
@@ -570,9 +814,15 @@ def get_meal_plan_detail(
             for r in reviews
         ]
 
+        q_sessions = list(
+            sess.scalars(
+                select(QueryLog.session_id).where(QueryLog.meal_plan_id == meal_plan_id)
+            ).all()
+        )
+        candidate_sids = list(dict.fromkeys([plan.thread_id, *q_sessions]))
         guardrail_events = sess.scalars(
             select(GuardrailEvent)
-            .where(GuardrailEvent.session_id == plan.thread_id)
+            .where(GuardrailEvent.session_id.in_(candidate_sids))
             .order_by(GuardrailEvent.id.asc())
         ).all()
         guardrails_list = [
@@ -714,6 +964,15 @@ def preview_and_verify_edited_items(
             by_day_meal.setdefault((it.day, it.meal), []).append(
                 PlannedItem(food_id=it.food_id, grams=it.grams)
             )
+        if not by_day_meal:
+            draft_plan = _parse_draft_plan_json(getattr(plan, "draft_plan_json", "{}"))
+            if draft_plan is not None:
+                for dp in draft_plan.days:
+                    for ml in dp.meals:
+                        for pit in ml.items:
+                            by_day_meal.setdefault((int(dp.day), str(ml.meal)), []).append(
+                                PlannedItem(food_id=int(pit.food_id), grams=float(pit.grams))
+                            )
 
         days_list: list[DayPlan] = []
         for d in range(1, prof.days + 1):
@@ -803,24 +1062,45 @@ def record_review_for_finalized_plan(
 
         verification: dict[str, Any] | None = None
         if decision_clean in ("approve", "edit"):
-            current_items = list(
+            current_rows = list(
                 sess.scalars(
                     select(MealPlanItem).where(MealPlanItem.meal_plan_id == meal_plan_id)
                 ).all()
             )
-            if not current_items:
-                raise ValueError("Không thể duyệt thực đơn chưa có món ăn.")
-            if decision_clean == "edit" and not edited_items:
-                raise ValueError("Cần danh sách món chỉnh sửa hợp lệ khi chọn sửa thực đơn.")
-            candidate_items = edited_items if decision_clean == "edit" else [
+            current_items: list[dict[str, Any]] = [
                 {
                     "day": item.day,
                     "meal": item.meal,
                     "food_id": item.food_id,
                     "grams": item.grams,
                 }
-                for item in current_items
+                for item in current_rows
             ]
+            if not current_items:
+                draft_plan = _parse_draft_plan_json(getattr(plan, "draft_plan_json", "{}"))
+                if draft_plan is not None:
+                    for dp in draft_plan.days:
+                        for ml in dp.meals:
+                            for pit in ml.items:
+                                current_items.append(
+                                    {
+                                        "day": int(dp.day),
+                                        "meal": str(ml.meal),
+                                        "food_id": int(pit.food_id),
+                                        "grams": float(pit.grams),
+                                    }
+                                )
+            if decision_clean == "edit":
+                if edited_items is None:
+                    raise ValueError("Cần danh sách món chỉnh sửa hợp lệ khi chọn sửa thực đơn.")
+                if not current_items and not edited_items:
+                    raise ValueError("Không thể duyệt thực đơn chưa có món ăn.")
+                candidate_items = edited_items
+            else:
+                if not current_items:
+                    raise ValueError("Không thể duyệt thực đơn chưa có món ăn.")
+                candidate_items = current_items
+
             verification = preview_and_verify_edited_items(
                 meal_plan_id, candidate_items or [], session=sess
             )
@@ -832,11 +1112,12 @@ def record_review_for_finalized_plan(
         if new_status == "approved":
             plan.violations_json = "[]"
 
-        if decision_clean == "edit" and verification is not None:
+        if new_status == "approved" and verification is not None:
             sess.execute(delete(MealPlanItem).where(MealPlanItem.meal_plan_id == meal_plan_id))
             sess.flush()
 
             verified_plan = verification.get("plan_llm") or {}
+            plan.draft_plan_json = json.dumps(verified_plan, ensure_ascii=False)
             scored_list = list(verification.get("scored_items") or [])
             scored_idx = 0
             for day_obj in verified_plan.get("days", []):
@@ -860,6 +1141,18 @@ def record_review_for_finalized_plan(
                                 sodium_mg=float(s_item["sodium_mg"]),
                             )
                         )
+            cur_exp = (plan.explanation_md or "").strip()
+            if (
+                not cur_exp
+                or "Hệ thống chưa thể tự động hoàn tất thực đơn" in cur_exp
+                or "Nội dung giải thích tự động đã bị ẩn" in cur_exp
+            ):
+                plan.explanation_md = _build_approved_explanation_md(
+                    plan,
+                    verification,
+                    note=note,
+                    session=sess,
+                )
 
         edited_json = json.dumps(edited_items or [], ensure_ascii=False)
         rev = Review(

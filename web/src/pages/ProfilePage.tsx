@@ -16,7 +16,7 @@ import {
 import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AnalyzingCard } from "@/components/profile/AnalyzingCard";
-import { Badge } from "@/components/ui/badge";
+import { AnimatedNumber } from "@/components/ui/animated-number";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Label, Textarea } from "@/components/ui/input";
@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { InfoTip } from "@/components/ui/tooltip";
 import {
   ACTIVITY_LABELS,
@@ -37,6 +38,7 @@ import {
   formatActivity,
   formatAllergen,
   formatCondition,
+  formatInt,
   formatNumber,
 } from "@/lib/format";
 import { PAGE_TRANSITION } from "@/lib/motion";
@@ -76,6 +78,125 @@ const DEFAULT_PROFILE: PatientProfileInput = {
 const CONDITION_KEYS: ConditionCode[] = ["t2d", "htn", "gout", "obesity"];
 const ALLERGEN_KEYS: AllergenCode[] = ["seafood", "peanut", "milk", "egg", "gluten", "soy"];
 const ACTIVITY_KEYS: ActivityLevel[] = ["sedentary", "light", "moderate", "active", "very_active"];
+
+const ACTIVITY_FACTORS: Record<ActivityLevel, number> = {
+  sedentary: 1.2,
+  light: 1.375,
+  moderate: 1.55,
+  active: 1.725,
+  very_active: 1.9,
+};
+
+function BmiArcGauge({
+  bmi,
+  label,
+}: {
+  bmi: number;
+  label: string;
+}) {
+  // Quy đổi BMI từ dải [14..34] sang góc 0..180 độ (bán nguyệt trên)
+  const clamped = Math.max(14, Math.min(34, bmi));
+  const ratio = (clamped - 14) / (34 - 14);
+  const cx = 110;
+  const cy = 104;
+  const r = 80;
+  const arcLen = Math.PI * r; // ~251.33
+  const dashOffset = arcLen * (1 - ratio);
+
+  // Tọa độ đầu kim trên cung tròn từ 180° (trái) -> 0° (phải)
+  const angleRad = Math.PI * (1 - ratio);
+  const dotX = cx + r * Math.cos(angleRad);
+  const dotY = cy - r * Math.sin(angleRad);
+
+  const zone =
+    bmi < 18.5
+      ? { stroke: "#38BDF8", glow: "rgba(56,189,248,0.65)", pill: "border-[#38BDF8]/40 bg-[#38BDF8]/18 text-[#E0F2FE]" }
+      : bmi < 23
+        ? { stroke: "#34D399", glow: "rgba(52,211,153,0.7)", pill: "border-[#34D399]/40 bg-[#34D399]/18 text-[#D1FAE5]" }
+        : bmi < 25
+          ? { stroke: "#FBBF24", glow: "rgba(251,191,36,0.65)", pill: "border-[#FBBF24]/40 bg-[#FBBF24]/18 text-[#FEF3C7]" }
+          : { stroke: "#FB7185", glow: "rgba(251,113,133,0.7)", pill: "border-[#FB7185]/45 bg-[#FB7185]/20 text-[#FFE4E6]" };
+
+  const arcPath = `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`;
+
+  return (
+    <div className="flex flex-col items-center">
+      <div className="relative w-full max-w-[228px]">
+        <svg viewBox="0 0 220 120" className="w-full overflow-visible" role="img" aria-label={`Biểu đồ bán nguyệt BMI ${formatNumber(bmi, 1)}`}>
+          <defs>
+            <linearGradient id="bmiZonesTrack" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#38BDF8" stopOpacity="0.38" />
+              <stop offset="28%" stopColor="#34D399" stopOpacity="0.45" />
+              <stop offset="56%" stopColor="#FBBF24" stopOpacity="0.45" />
+              <stop offset="100%" stopColor="#FB7185" stopOpacity="0.48" />
+            </linearGradient>
+          </defs>
+          {/* Base zone track */}
+          <path
+            d={arcPath}
+            fill="none"
+            stroke="url(#bmiZonesTrack)"
+            strokeWidth="12"
+            strokeLinecap="round"
+          />
+          {/* Active progress arc */}
+          <path
+            d={arcPath}
+            fill="none"
+            stroke={zone.stroke}
+            strokeWidth="12"
+            strokeLinecap="round"
+            strokeDasharray={arcLen}
+            strokeDashoffset={dashOffset}
+            style={{
+              transition: "stroke-dashoffset 320ms cubic-bezier(0.22, 1, 0.36, 1), stroke 240ms ease",
+              filter: `drop-shadow(0 0 8px ${zone.glow})`,
+            }}
+          />
+          {/* Glowing indicator dot */}
+          <circle
+            cx={dotX}
+            cy={dotY}
+            r="7"
+            fill="#FFFFFF"
+            stroke={zone.stroke}
+            strokeWidth="3.5"
+            style={{
+              transition: "cx 320ms cubic-bezier(0.22, 1, 0.36, 1), cy 320ms cubic-bezier(0.22, 1, 0.36, 1), stroke 240ms ease",
+              filter: `drop-shadow(0 0 10px ${zone.glow})`,
+            }}
+          />
+        </svg>
+
+        {/* Center Readout */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-1 flex flex-col items-center text-center">
+          <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#99F6E4]/80">
+            BMI ước tính
+          </span>
+          <span className="mt-0.5 font-mono text-3xl font-extrabold leading-none text-white tabular-nums">
+            <AnimatedNumber value={bmi} formatter={(v) => formatNumber(v, 1)} />
+          </span>
+        </div>
+      </div>
+
+      <span
+        className={cn(
+          "mt-1.5 inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold transition-colors",
+          zone.pill
+        )}
+      >
+        {label}
+      </span>
+
+      <div className="mt-2 flex w-full justify-between px-1 font-mono text-[10px] text-[#99F6E4]/70">
+        <span>&lt;18.5</span>
+        <span>18.5–22.9</span>
+        <span>23–24.9</span>
+        <span>≥25</span>
+      </div>
+    </div>
+  );
+}
 
 export function ProfilePage({ samples, isSubmitting, onSubmitProfile }: ProfilePageProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -234,8 +355,8 @@ export function ProfilePage({ samples, isSubmitting, onSubmitProfile }: ProfileP
     return list;
   }, [form]);
 
-  // Ước tính BMI trực quan để người dùng thấy dữ liệu sống theo chiều cao/cân nặng đang gõ
-  const liveBmi = useMemo(() => {
+  // Ước tính nhanh BMI, BMR & TDEE (Mifflin-St Jeor) trực quan khi gõ — máy chủ sẽ tính chuẩn khi phân tích
+  const liveMetrics = useMemo(() => {
     if (
       !Number.isFinite(form.height_cm) ||
       !Number.isFinite(form.weight_kg) ||
@@ -245,12 +366,20 @@ export function ProfilePage({ samples, isSubmitting, onSubmitProfile }: ProfileP
       return null;
     }
     const m = form.height_cm / 100;
-    const val = form.weight_kg / (m * m);
-    if (!Number.isFinite(val)) return null;
-    const info = classifyBmi(val);
-    const markerPct = Math.max(4, Math.min(96, ((val - 14) / (34 - 14)) * 100));
-    return { val, info, markerPct };
-  }, [form.height_cm, form.weight_kg]);
+    const bmi = form.weight_kg / (m * m);
+    if (!Number.isFinite(bmi)) return null;
+    const info = classifyBmi(bmi);
+
+    const validAge = Number.isFinite(form.age) && form.age >= 1 && form.age <= 120;
+    const baseBmr = validAge
+      ? 10 * form.weight_kg + 6.25 * form.height_cm - 5 * form.age + (form.sex === "male" ? 5 : -161)
+      : null;
+    const bmr = baseBmr !== null && baseBmr > 0 ? Math.round(baseBmr) : null;
+    const factor = ACTIVITY_FACTORS[form.activity_level] ?? 1.2;
+    const tdee = bmr !== null ? Math.round(bmr * factor) : null;
+
+    return { bmi, info, bmr, tdee };
+  }, [form.height_cm, form.weight_kg, form.age, form.sex, form.activity_level]);
 
   return (
     <div>
@@ -280,8 +409,8 @@ export function ProfilePage({ samples, isSubmitting, onSubmitProfile }: ProfileP
                     className={cn(
                       "inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all duration-150 cursor-pointer active:scale-[0.98] disabled:opacity-50",
                       active
-                        ? "border-transparent bg-gradient-to-r from-[#0B4F4A] via-[#0D9488] to-[#14B8A6] text-white shadow-[0_4px_14px_rgba(13,148,136,0.28)]"
-                        : "border-[#D5E6DF] bg-white/85 text-[#334155] hover:-translate-y-[1px] hover:border-[#14B8A6] hover:bg-[#F0FDFA] hover:text-[#0B4F4A] hover:shadow-[0_4px_14px_rgba(13,148,136,0.12)]"
+                        ? "border-transparent bg-gradient-to-r from-[#0D9488] via-[#0EA5A8] to-[#06B6D4] text-white shadow-[0_6px_16px_rgba(6,182,212,0.3)]"
+                        : "border-[#CBE4DC] bg-white/85 text-[#334155] hover:-translate-y-[1px] hover:border-[#06B6D4] hover:bg-[#ECFEFF] hover:text-[#0B4F4A] hover:shadow-[0_4px_14px_rgba(6,182,212,0.14)]"
                     )}
                   >
                     <SIcon className={cn("h-3.5 w-3.5 shrink-0", active ? "text-white" : tone)} />
@@ -336,9 +465,9 @@ export function ProfilePage({ samples, isSubmitting, onSubmitProfile }: ProfileP
           <div className="lg:col-span-8 space-y-5">
             {/* Connected Stepper Header */}
             <div className="space-y-2.5">
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#E2EFEA]">
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#D7ECE6]">
                 <motion.div
-                  className="h-full rounded-full bg-gradient-to-r from-[#0B4F4A] via-[#0D9488] to-[#14B8A6] shadow-[0_0_10px_rgba(20,184,166,0.45)]"
+                  className="h-full rounded-full bg-gradient-to-r from-[#0D9488] via-[#0EA5A8] to-[#06B6D4] shadow-[0_0_12px_rgba(6,182,212,0.5)]"
                   initial={false}
                   animate={{ width: `${(step / 3) * 100}%` }}
                   transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
@@ -364,10 +493,10 @@ export function ProfilePage({ samples, isSubmitting, onSubmitProfile }: ProfileP
                       className={cn(
                         "flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all cursor-pointer active:scale-[0.99]",
                         isCurrent
-                          ? "border-transparent bg-gradient-to-r from-[#0B4F4A] via-[#0D9488] to-[#14B8A6] text-white shadow-[0_6px_18px_rgba(13,148,136,0.28)]"
+                          ? "border-transparent bg-gradient-to-r from-[#0D9488] via-[#0EA5A8] to-[#06B6D4] text-white shadow-[0_6px_18px_rgba(6,182,212,0.3)]"
                           : isDone
                             ? "border-[#A7F3D0] bg-[#ECFDF5]/90 text-[#065F46] hover:border-[#34D399]"
-                            : "border-[#DCEAE4] bg-white/80 text-[#64748B] hover:border-[#99D5C6] hover:text-[#0B4F4A]"
+                            : "border-white/80 bg-white/75 backdrop-blur-md text-[#64748B] hover:border-[#5EEAD4] hover:text-[#0B4F4A]"
                       )}
                     >
                       <span
@@ -445,8 +574,8 @@ export function ProfilePage({ samples, isSubmitting, onSubmitProfile }: ProfileP
                                 className={cn(
                                   "h-10 rounded-xl border text-sm font-semibold transition-all cursor-pointer active:scale-[0.985]",
                                   form.sex === opt.value
-                                    ? "border-transparent bg-gradient-to-r from-[#0B4F4A] to-[#0D9488] text-white shadow-[0_4px_12px_rgba(13,148,136,0.25)]"
-                                    : "border-[#D5E2DC] bg-white/90 text-[#334155] hover:border-[#0D9488]/60 hover:bg-[#F0FDFA]"
+                                    ? "border-transparent bg-gradient-to-r from-[#0D9488] to-[#06B6D4] text-white shadow-[0_4px_14px_rgba(6,182,212,0.28)]"
+                                    : "border-[#CFE3DC] bg-white/85 text-[#334155] hover:border-[#0D9488]/60 hover:bg-[#ECFEFF]"
                                 )}
                               >
                                 {opt.label}
@@ -573,36 +702,40 @@ export function ProfilePage({ samples, isSubmitting, onSubmitProfile }: ProfileP
                           {CONDITION_KEYS.map((code) => {
                             const selected = form.conditions.includes(code);
                             return (
-                              <button
+                              <SpotlightCard
                                 key={code}
-                                type="button"
-                                onClick={() => toggleCondition(code)}
                                 className={cn(
-                                  "flex items-start justify-between gap-3 rounded-xl border p-3.5 text-left transition-all cursor-pointer active:scale-[0.99]",
+                                  "rounded-xl border transition-all",
                                   selected
-                                    ? "border-[#0D9488] bg-gradient-to-br from-[#F0FDFA] to-[#CCFBF1]/45 shadow-[0_4px_14px_rgba(13,148,136,0.12)]"
-                                    : "border-[#DCEAE4] bg-white/90 hover:border-[#99D5C6]"
+                                    ? "border-[#0D9488] bg-gradient-to-br from-[#F0FDFA] to-[#CCFBF1]/60 shadow-[0_6px_18px_rgba(13,148,136,0.16)]"
+                                    : "border-[#CFE3DC] bg-white/85 hover:border-[#5EEAD4]"
                                 )}
                               >
-                                <div>
-                                  <p className="text-sm font-bold text-[#0F172A]">
-                                    {CONDITION_LABELS[code]}
-                                  </p>
-                                  <p className="mt-0.5 text-xs text-[#64748B]">
-                                    {CONDITION_DESCRIPTIONS[code]}
-                                  </p>
-                                </div>
-                                <span
-                                  className={cn(
-                                    "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors",
-                                    selected
-                                      ? "border-transparent bg-gradient-to-br from-[#0B4F4A] to-[#14B8A6] text-white"
-                                      : "border-[#CBD5E1] bg-white"
-                                  )}
+                                <button
+                                  type="button"
+                                  onClick={() => toggleCondition(code)}
+                                  className="flex h-full w-full items-start justify-between gap-3 p-3.5 text-left cursor-pointer active:scale-[0.99]"
                                 >
-                                  {selected && <Check className="h-3.5 w-3.5" />}
-                                </span>
-                              </button>
+                                  <div>
+                                    <p className="text-sm font-bold text-[#0F172A]">
+                                      {CONDITION_LABELS[code]}
+                                    </p>
+                                    <p className="mt-0.5 text-xs text-[#475569]">
+                                      {CONDITION_DESCRIPTIONS[code]}
+                                    </p>
+                                  </div>
+                                  <span
+                                    className={cn(
+                                      "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors",
+                                      selected
+                                        ? "border-transparent bg-gradient-to-br from-[#0D9488] to-[#06B6D4] text-white shadow-[0_2px_8px_rgba(6,182,212,0.35)]"
+                                        : "border-[#CBD5E1] bg-white"
+                                    )}
+                                  >
+                                    {selected && <Check className="h-3.5 w-3.5" />}
+                                  </span>
+                                </button>
+                              </SpotlightCard>
                             );
                           })}
                         </div>
@@ -780,8 +913,8 @@ export function ProfilePage({ samples, isSubmitting, onSubmitProfile }: ProfileP
                               className={cn(
                                 "h-10 rounded-xl border font-mono text-sm font-bold transition-all cursor-pointer active:scale-[0.97]",
                                 form.days === d
-                                  ? "border-transparent bg-gradient-to-r from-[#0B4F4A] to-[#14B8A6] text-white shadow-[0_4px_12px_rgba(13,148,136,0.28)]"
-                                  : "border-[#D5E2DC] bg-white/90 text-[#334155] hover:border-[#0D9488] hover:bg-[#F0FDFA]"
+                                  ? "border-transparent bg-gradient-to-r from-[#0D9488] to-[#06B6D4] text-white shadow-[0_4px_14px_rgba(6,182,212,0.3)]"
+                                  : "border-[#CFE3DC] bg-white/85 text-[#334155] hover:border-[#06B6D4] hover:bg-[#ECFEFF]"
                               )}
                             >
                               {d}
@@ -844,143 +977,180 @@ export function ProfilePage({ samples, isSubmitting, onSubmitProfile }: ProfileP
             </AnimatePresence>
           </div>
 
-          {/* Right: Luminous Clinical Profile Card */}
+          {/* Right: Live Biometric Dark-Emerald Signature Card */}
           <div className="lg:col-span-4">
-            <Card className="sticky top-24 overflow-hidden border-[#C7E3DA]">
-              {/* Top 3px Luminous Accent */}
-              <div className="h-[3px] w-full bg-gradient-to-r from-[#0B4F4A] via-[#0D9488] to-[#38BDF8]" />
-              <CardHeader className="border-b border-[#DCEAE4] bg-gradient-to-r from-[#F0FDFA]/90 via-[#E6F8F5]/75 to-[#E0F2FE]/60 pb-3.5">
-                <CardTitle className="flex items-center justify-between text-base">
-                  <span className="text-[#0B4F4A]">Hồ sơ gửi phân tích</span>
-                  <Badge variant="default" className="border-[#99D5C6] bg-white/90 font-mono shadow-2xs">
-                    {form.patient_code || "BN-001"}
-                  </Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3.5 pt-4 text-sm">
-                <div className="grid grid-cols-2 gap-2.5 rounded-xl border border-[#DCEAE4] bg-[#F7FCFA] p-3">
+            <SpotlightCard
+              tone="dark"
+              className="dark-emerald-card sticky top-24 rounded-2xl text-white"
+            >
+              {/* Top 3px Aurora Accent */}
+              <div className="h-[3px] w-full bg-gradient-to-r from-[#2DD4BF] via-[#22D3EE] to-[#34D399]" />
+
+              <div className="flex items-center justify-between border-b border-white/14 px-5 py-3.5">
+                <div>
+                  <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-[#5EEAD4]">
+                    Live Biometrics
+                  </span>
+                  <h3 className="text-sm font-extrabold text-white">Hồ sơ gửi phân tích</h3>
+                </div>
+                <span className="rounded-full border border-[#5EEAD4]/40 bg-white/12 px-2.5 py-0.5 font-mono text-xs font-bold text-[#CCFBF1] shadow-2xs">
+                  {form.patient_code || "BN-001"}
+                </span>
+              </div>
+
+              <div className="space-y-3.5 p-4 sm:p-5 text-sm">
+                {/* Semicircular BMI Arc Gauge + Live BMR/TDEE */}
+                {liveMetrics && (
+                  <div className="rounded-2xl border border-white/14 bg-[#031F1E]/55 p-3.5 backdrop-blur-md space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="inline-flex items-center gap-1 text-[10.5px] font-bold uppercase tracking-wider text-[#99F6E4]/85">
+                        Chỉ số khối cơ thể
+                        <InfoTip
+                          text="Chỉ số khối cơ thể = cân nặng / (chiều cao m)². Phân loại theo ngưỡng chuẩn châu Á (IDI & WPRO)."
+                          className="text-[#99F6E4]/80 hover:bg-white/15 hover:text-white"
+                        />
+                      </span>
+                      <span className="font-mono text-[11px] font-semibold text-[#CCFBF1]/85 tabular-nums">
+                        {form.height_cm} cm · {form.weight_kg} kg
+                      </span>
+                    </div>
+
+                    <BmiArcGauge bmi={liveMetrics.bmi} label={liveMetrics.info.label} />
+
+                    {liveMetrics.bmr !== null && liveMetrics.tdee !== null && (
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <div className="rounded-xl border border-white/12 bg-white/[0.07] px-3 py-2">
+                          <span className="block text-[10px] font-semibold uppercase tracking-wide text-[#99F6E4]/80">
+                            BMR sơ bộ
+                          </span>
+                          <p className="mt-0.5 font-mono text-base font-extrabold text-white tabular-nums">
+                            <AnimatedNumber value={liveMetrics.bmr} formatter={formatInt} />{" "}
+                            <span className="text-[10.5px] font-medium text-[#CCFBF1]/75">kcal</span>
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-white/12 bg-white/[0.07] px-3 py-2">
+                          <span className="block text-[10px] font-semibold uppercase tracking-wide text-[#99F6E4]/80">
+                            TDEE sơ bộ
+                          </span>
+                          <p className="mt-0.5 font-mono text-base font-extrabold text-[#5EEAD4] tabular-nums">
+                            <AnimatedNumber value={liveMetrics.tdee} formatter={formatInt} />{" "}
+                            <span className="text-[10.5px] font-medium text-[#CCFBF1]/75">kcal</span>
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    <p className="text-[10.5px] leading-snug text-[#CCFBF1]/70">
+                      * Ước tính nhanh (Mifflin-St Jeor), máy chủ tính chuẩn theo quy tắc lâm sàng khi phân tích.
+                    </p>
+                  </div>
+                )}
+
+                {/* Compact Demographics Strip */}
+                <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/12 bg-white/[0.06] p-3 text-xs">
                   <div>
-                    <span className="text-[11px] font-semibold uppercase text-[#64748B]">
+                    <span className="text-[10px] font-semibold uppercase text-[#99F6E4]/75">
                       Tuổi / Giới
                     </span>
-                    <p className="mt-0.5 font-semibold text-[#0F172A] tabular-nums">
+                    <p className="mt-0.5 font-semibold text-white tabular-nums">
                       {form.age} tuổi · {form.sex === "male" ? "Nam" : "Nữ"}
                     </p>
                   </div>
                   <div>
-                    <span className="text-[11px] font-semibold uppercase text-[#64748B]">
-                      Chiều cao / Cân nặng
+                    <span className="text-[10px] font-semibold uppercase text-[#99F6E4]/75">
+                      Số ngày lập
                     </span>
-                    <p className="mt-0.5 font-semibold text-[#0F172A] tabular-nums">
-                      {form.height_cm} cm · {form.weight_kg} kg
+                    <p className="mt-0.5 font-mono font-bold text-[#5EEAD4] tabular-nums">
+                      {form.days} ngày
                     </p>
                   </div>
-                  <div className="col-span-2">
-                    <span className="text-[11px] font-semibold uppercase text-[#64748B]">
+                  <div className="col-span-2 border-t border-white/10 pt-2">
+                    <span className="text-[10px] font-semibold uppercase text-[#99F6E4]/75">
                       Mức vận động
                     </span>
-                    <p className="mt-0.5 text-xs font-medium text-[#334155]">
+                    <p className="mt-0.5 text-[11.5px] font-medium text-[#E2FAF5]">
                       {formatActivity(form.activity_level)}
                     </p>
                   </div>
                 </div>
 
-                {/* Live BMI Reference Scale */}
-                {liveBmi && (
-                  <div className="rounded-xl border border-[#D4E7E0] bg-white/90 p-3 space-y-2 shadow-2xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase text-[#64748B]">
-                        BMI ước tính
-                        <InfoTip text="Chỉ số khối cơ thể = cân nặng / (chiều cao m)². Phân loại theo ngưỡng chuẩn châu Á (IDI & WPRO)." />
-                      </span>
-                      <span className="font-mono text-xs font-bold text-[#0B4F4A] tabular-nums">
-                        {formatNumber(liveBmi.val, 1)} · {liveBmi.info.label}
-                      </span>
-                    </div>
-                    <div className="relative h-2.5 w-full rounded-full bg-gradient-to-r from-[#38BDF8] via-[#10B981] via-55% to-[#F43F5E]">
-                      <div
-                        className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[#0B4F4A] shadow-[0_0_0_3px_rgba(20,184,166,0.28)] transition-all duration-200"
-                        style={{ left: `${liveBmi.markerPct}%` }}
-                      />
-                    </div>
-                    <div className="flex justify-between font-mono text-[10px] text-[#64748B]">
-                      <span>&lt;18.5</span>
-                      <span>18.5–22.9</span>
-                      <span>23–24.9</span>
-                      <span>≥25</span>
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <span className="text-[11px] font-semibold uppercase text-[#64748B]">
-                    Bệnh lý nền
-                  </span>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {form.conditions.length > 0 ? (
-                      form.conditions.map((c) => (
-                        <Badge key={c} variant="default">
-                          {formatCondition(c)}
-                        </Badge>
-                      ))
-                    ) : (
-                      <span className="text-xs text-[#64748B]">Không khai báo</span>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <span className="text-[11px] font-semibold uppercase text-[#64748B]">
-                    Dị ứng loại trừ
-                  </span>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {form.allergens.length > 0 ? (
-                      form.allergens.map((a) => (
-                        <Badge key={a} variant="danger">
-                          {formatAllergen(a)}
-                        </Badge>
-                      ))
-                    ) : (
-                      <span className="text-xs text-[#64748B]">Không có</span>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <span className="text-[11px] font-semibold uppercase text-[#64748B]">
-                    Lưu ý nguy cơ
-                  </span>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {riskSummaryList.length > 0 ? (
-                      riskSummaryList.map((r) => (
-                        <Badge key={r} variant="pending">
-                          {r}
-                        </Badge>
-                      ))
-                    ) : (
-                      <span className="text-xs text-[#64748B]">Chưa ghi nhận</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="border-t border-[#E6F0EC] pt-3 space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-[#64748B] font-medium">Số ngày lập thực đơn</span>
-                    <span className="font-mono font-bold text-[#0F172A]">{form.days} ngày</span>
-                  </div>
+                {/* Conditions / Allergens / Risks */}
+                <div className="space-y-2.5 text-xs">
                   <div>
-                    <span className="text-xs text-[#64748B] font-medium">Sở thích ăn uống</span>
-                    <p className="mt-0.5 text-xs text-[#334155] italic">
-                      {form.preferences_text.trim() || "Không có ghi chú thêm"}
-                    </p>
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[#99F6E4]/75">
+                      Bệnh lý nền
+                    </span>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {form.conditions.length > 0 ? (
+                        form.conditions.map((c) => (
+                          <span
+                            key={c}
+                            className="inline-flex items-center rounded-full border border-[#5EEAD4]/35 bg-[#14B8A6]/20 px-2.5 py-0.5 text-[11px] font-semibold text-[#CCFBF1]"
+                          >
+                            {formatCondition(c)}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-[#CCFBF1]/60">Không khai báo</span>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                <p className="rounded-xl border border-[#CDE6DF] bg-[#F0FDFA]/90 px-3 py-2 text-[11px] text-[#0B4F4A]">
-                  BMI, BMR, TDEE và nhu cầu dinh dưỡng sẽ được máy chủ tính toán chuẩn xác theo quy tắc y khoa khi phân tích.
-                </p>
-              </CardContent>
-            </Card>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-[#99F6E4]/75">
+                        Dị ứng loại trừ
+                      </span>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {form.allergens.length > 0 ? (
+                          form.allergens.map((a) => (
+                            <span
+                              key={a}
+                              className="inline-flex items-center rounded-full border border-[#FB7185]/45 bg-[#FB7185]/20 px-2 py-0.5 text-[10.5px] font-semibold text-[#FFE4E6]"
+                            >
+                              {formatAllergen(a)}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-[11px] text-[#CCFBF1]/60">Không có</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-[#99F6E4]/75">
+                        Lưu ý nguy cơ
+                      </span>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {riskSummaryList.length > 0 ? (
+                          riskSummaryList.map((r) => (
+                            <span
+                              key={r}
+                              className="inline-flex items-center rounded-full border border-[#FBBF24]/45 bg-[#FBBF24]/20 px-2 py-0.5 text-[10.5px] font-semibold text-[#FEF3C7]"
+                            >
+                              {r}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-[11px] text-[#CCFBF1]/60">Chưa ghi nhận</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {form.preferences_text.trim() && (
+                    <div className="border-t border-white/12 pt-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-[#99F6E4]/75">
+                        Sở thích ăn uống
+                      </span>
+                      <p className="mt-0.5 line-clamp-2 text-[11.5px] italic text-[#E2FAF5]/90">
+                        “{form.preferences_text.trim()}”
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </SpotlightCard>
           </div>
         </div>
       )}

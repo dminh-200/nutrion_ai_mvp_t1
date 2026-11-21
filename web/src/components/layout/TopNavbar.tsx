@@ -82,12 +82,12 @@ export function TopNavbar({
             onClick={() => onTabChange(allowedTabs[0])}
             className="group flex items-center gap-2.5 rounded-xl px-1 py-0.5 text-left cursor-pointer shrink-0 transition-transform active:scale-[0.985]"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#0B4F4A] via-[#0D9488] to-[#14B8A6] text-white shadow-[0_4px_14px_rgba(13,148,136,0.32),inset_0_1px_0_rgba(255,255,255,0.3)] transition-transform duration-200 group-hover:scale-[1.04]">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#0D9488] via-[#0EA5A8] to-[#06B6D4] text-white shadow-[0_4px_16px_rgba(6,182,212,0.34),inset_0_1px_0_rgba(255,255,255,0.34)] transition-transform duration-200 group-hover:scale-[1.04]">
               <Leaf className="h-4.5 w-4.5" />
             </span>
             <div className="leading-tight">
               <span className="block text-sm font-extrabold tracking-tight text-[#0F172A]">
-                NutriAI <span className="bg-gradient-to-r from-[#0B4F4A] to-[#0D9488] bg-clip-text text-transparent">Clinical</span>
+                NutriAI <span className="bg-gradient-to-r from-[#0D9488] to-[#06B6D4] bg-clip-text text-transparent">Clinical</span>
               </span>
               <span className="hidden sm:block text-[11px] font-medium text-[#64748B]">
                 Dinh dưỡng bệnh lý
@@ -121,7 +121,7 @@ export function TopNavbar({
                         <motion.span
                           layoutId="nav-active-pill"
                           transition={TAB_SPRING}
-                          className="absolute inset-0 rounded-lg bg-gradient-to-r from-[#0B4F4A] via-[#0D9488] to-[#14B8A6] shadow-[0_4px_14px_rgba(13,148,136,0.32),inset_0_1px_0_rgba(255,255,255,0.22)]"
+                          className="absolute inset-0 rounded-lg bg-gradient-to-r from-[#0D9488] via-[#0EA5A8] to-[#06B6D4] shadow-[0_4px_16px_rgba(6,182,212,0.36),inset_0_1px_0_rgba(255,255,255,0.28)]"
                         />
                       )}
                       <span className="relative z-10 inline-flex items-center gap-1.5">
@@ -245,8 +245,8 @@ export function TopNavbar({
                   className={cn(
                     "flex items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-colors cursor-pointer",
                     isActive
-                      ? "bg-gradient-to-r from-[#0B4F4A] to-[#0D9488] text-white"
-                      : "text-[#334155] hover:bg-[#EFF7F4]"
+                      ? "bg-gradient-to-r from-[#0D9488] to-[#06B6D4] text-white shadow-[0_4px_14px_rgba(6,182,212,0.28)]"
+                      : "text-[#334155] hover:bg-[#E6F6F2]"
                   )}
                 >
                   <span className="flex items-center gap-2.5">

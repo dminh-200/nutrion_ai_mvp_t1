@@ -15,6 +15,7 @@ from app.ui_helpers import (
     render_hero_banner,
 )
 from db.repo import (
+    get_allowed_foods_for_plan,
     get_meal_plan_detail,
     list_meal_plans_for_ui,
     preview_and_verify_edited_items,
@@ -83,6 +84,7 @@ if st.session_state.get("preview_plan_id") != selected_plan_id:
     st.session_state["edit_preview_result"] = None
     st.session_state["preview_plan_id"] = selected_plan_id
     st.session_state["preview_items"] = None
+    st.session_state["extra_added_items"] = []
 st.session_state["review_selected_plan_id"] = selected_plan_id
 
 # Tải chi tiết thực đơn
@@ -120,20 +122,26 @@ with st.container(border=True):
 
 # Kiểm tra vi phạm / Sự kiện guardrail
 guardrails = detail.get("guardrail_events", [])
-if guardrails or current_status in ("pending_review", "needs_human_review"):
+violations_list = detail.get("violations", [])
+if guardrails or violations_list or current_status in ("pending_review", "needs_human_review"):
     with st.container(border=True):
         st.markdown("#### ⚠️ Lý do cần chuyên gia xem xét & Vi phạm ghi nhận")
+        if violations_list:
+            for v in violations_list:
+                v_code = v.get("code", "VIOLATION")
+                v_msg = v.get("message_vi", "")
+                st.warning(f"• **[{v_code}]**: {v_msg}")
         if guardrails:
             for ge in guardrails:
                 lyr = ge.get("layer", "").upper()
                 typ = ge.get("type", "")
                 st.warning(f"• **[{lyr} / {typ}]**: {ge.get('reason')}")
-        else:
+        if not violations_list and not guardrails:
             st.info("Thực đơn cần chuyên gia xem xét để đảm bảo an toàn hoặc tối ưu định lượng.")
 
 # Trình chỉnh sửa thực đơn tương tác st.data_editor
 st.markdown("#### ✏️ Điều Chỉnh Định Lượng Khẩu Phần Ăn")
-st.caption("Chuyên gia có thể sửa grams từng món ăn (nhập 0g để xóa món khỏi thực đơn).")
+st.caption("Chuyên gia có thể sửa grams từng món ăn (nhập 0g để xóa món) hoặc bổ sung món an toàn.")
 
 meal_reverse_map = {
     "Bữa sáng": "breakfast",
@@ -141,6 +149,65 @@ meal_reverse_map = {
     "Bữa tối": "dinner",
     "Bữa phụ": "snack",
 }
+
+allowed_foods_list = get_allowed_foods_for_plan(selected_plan_id)
+if allowed_foods_list and current_status in ("pending_review", "needs_human_review"):
+    with st.expander("➕ Bổ sung món ăn an toàn vào thực đơn", expanded=False):
+        c_add1, c_add2, c_add3, c_add4, c_add5 = st.columns([1, 1.3, 3, 1.2, 1])
+        max_days = max(1, int(patient_info.get("days") or 3))
+        with c_add1:
+            add_day = st.selectbox("Ngày", options=list(range(1, max_days + 1)), key="st_add_day")
+        with c_add2:
+            add_meal_label = st.selectbox(
+                "Bữa ăn",
+                options=list(meal_reverse_map.keys()),
+                index=1,
+                key="st_add_meal",
+            )
+        food_options = {
+            (
+                f"{f['name_vi']} ({f['kcal']:.0f}kcal | "
+                f"P{f['protein_g']:.0f}/F{f['fat_g']:.0f}/C{f['carb_g']:.0f})"
+            ): f
+            for f in allowed_foods_list
+        }
+        with c_add3:
+            selected_food_lbl = st.selectbox(
+                "Thực phẩm an toàn (trên 100g)",
+                options=list(food_options.keys()),
+                key="st_add_food",
+            )
+        chosen_food = food_options[selected_food_lbl]
+        with c_add4:
+            add_grams_val = st.number_input(
+                "Gram",
+                min_value=5.0,
+                max_value=400.0,
+                value=float(max(5.0, min(400.0, chosen_food.get("unit_default_g") or 15.0))),
+                step=5.0,
+                key="st_add_grams",
+            )
+        with c_add5:
+            st.write("")
+            st.write("")
+            if st.button("Thêm món", use_container_width=True, key="btn_st_add_food"):
+                extra = list(st.session_state.get("extra_added_items") or [])
+                extra.append(
+                    {
+                        "id": 9000 + len(extra),
+                        "day": int(add_day),
+                        "meal": meal_reverse_map[add_meal_label],
+                        "food_id": int(chosen_food["id"]),
+                        "name_vi": str(chosen_food["name_vi"]),
+                        "grams": float(add_grams_val),
+                    }
+                )
+                st.session_state["extra_added_items"] = extra
+                st.rerun()
+
+combined_items = list(detail.get("items", [])) + list(
+    st.session_state.get("extra_added_items") or []
+)
 
 editor_rows = [
     {
@@ -151,7 +218,7 @@ editor_rows = [
         "name_vi": it["name_vi"],
         "grams": float(it["grams"]),
     }
-    for it in detail.get("items", [])
+    for it in combined_items
 ]
 
 has_menu_items = bool(editor_rows)

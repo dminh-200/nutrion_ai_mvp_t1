@@ -24,6 +24,22 @@ def create_db_engine(db_url: str | None = None) -> Engine:
     def _set_sqlite_pragma(dbapi_connection, _connection_record) -> None:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        has_mp = cursor.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='meal_plan'"
+        ).fetchone()
+        if has_mp:
+            cols = {
+                row[1]
+                for row in cursor.execute("PRAGMA table_info(meal_plan)").fetchall()
+            }
+            for col_name, col_def in (
+                ("risk_json", "TEXT NOT NULL DEFAULT '{}'"),
+                ("snippets_json", "TEXT NOT NULL DEFAULT '[]'"),
+                ("violations_json", "TEXT NOT NULL DEFAULT '[]'"),
+                ("draft_plan_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ):
+                if col_name not in cols:
+                    cursor.execute(f"ALTER TABLE meal_plan ADD COLUMN {col_name} {col_def}")
         cursor.close()
 
     return engine

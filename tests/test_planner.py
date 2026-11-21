@@ -568,3 +568,27 @@ def test_alibaba_prompt_has_correct_column_header_dynamic_bounds_and_curated_lim
     assert "NGƯỠNG ĐẠT MỖI NGÀY" in prompt
     assert "SỬA VI PHẠM LẦN TRƯỚC" in prompt
     assert "display_name" not in prompt
+
+
+def test_curate_foods_for_alibaba_preserves_healthy_oils_and_nuts() -> None:
+    """Bộ lọc 56 món Alibaba luôn giữ đủ dầu thực vật lành mạnh (fat_g >= 80) và hạt giàu xơ."""
+    from agent.prompts import _curate_foods_for_alibaba
+    from core.food import get_allowed_foods, load_food_db_from_sqlite
+
+    food_db = load_food_db_from_sqlite()
+    allowed = get_allowed_foods(
+        needs=NeedsResult(needs=["giam_natri", "giam_can"], rule_refs=["NEED_HTN", "NEED_WEIGHT"]),
+        allergens=["soy", "peanut"],
+        limit=120,
+        food_db=food_db,
+    )
+    curated = _curate_foods_for_alibaba(allowed, limit=56)
+    oils = [f for f in curated if float(f.get("fat_g") or 0.0) >= 80.0]
+    nuts = [
+        f
+        for f in curated
+        if str(f.get("food_group")) == "dau_mo_hat" and float(f.get("fat_g") or 0.0) < 80.0
+    ]
+    assert len(oils) >= 2
+    assert all("chat_beo_bao_hoa" not in str(f.get("tags", "")) for f in oils)
+    assert len(nuts) >= 2

@@ -30,10 +30,12 @@ import {
   formatMeal,
   formatNumber,
   formatStatus,
+  formatViolationCode,
 } from "@/lib/format";
 import { TAB_SPRING } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type {
+  AllowedFood,
   EditedItemInput,
   MealPlanDetailResponse,
   MealPlanListResponse,
@@ -77,6 +79,14 @@ export function ReviewPage({
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   const [editableRows, setEditableRows] = useState<EditableRow[]>([]);
+  const [originalRowsSnapshot, setOriginalRowsSnapshot] = useState<EditableRow[]>([]);
+  const [allowedFoods, setAllowedFoods] = useState<AllowedFood[]>([]);
+  const [addDay, setAddDay] = useState<number>(1);
+  const [addMeal, setAddMeal] = useState<MealType>("lunch");
+  const [addFoodSearch, setAddFoodSearch] = useState<string>("");
+  const [addFoodId, setAddFoodId] = useState<number>(0);
+  const [addGrams, setAddGrams] = useState<number>(15);
+
   const [dryRunResult, setDryRunResult] = useState<PreviewEditResponse | null>(null);
   const [dryRunFingerprint, setDryRunFingerprint] = useState<string>("");
   const [runningDryRun, setRunningDryRun] = useState(false);
@@ -104,18 +114,33 @@ export function ReviewPage({
     setDryRunResult(null);
     setDryRunFingerprint("");
     try {
-      const d = await apiClient.getMealPlanDetail(id);
+      const [d, foods] = await Promise.all([
+        apiClient.getMealPlanDetail(id),
+        apiClient.getAllowedFoods(id).catch(() => [] as AllowedFood[]),
+      ]);
       setDetail(d);
-      setEditableRows(
-        d.items.map((it) => ({
-          day: it.day,
-          meal: (it.meal as MealType) || "breakfast",
-          food_id: it.food_id,
-          name_vi: it.name_vi,
-          original_grams: it.grams,
-          grams: it.grams,
-        }))
-      );
+      const rows = d.items.map((it) => ({
+        day: it.day,
+        meal: (it.meal as MealType) || "breakfast",
+        food_id: it.food_id,
+        name_vi: it.name_vi,
+        original_grams: it.grams,
+        grams: it.grams,
+      }));
+      setEditableRows(rows);
+      setOriginalRowsSnapshot(rows);
+      setAllowedFoods(foods);
+      setAddFoodSearch("");
+      const firstViolationDay = d.violations?.find((v) => v.day)?.day ?? 1;
+      setAddDay(firstViolationDay);
+      if (foods.length > 0) {
+        const defaultFood =
+          foods.find((f) => f.fat_g >= 80) ?? foods.find((f) => f.fat_g >= 14) ?? foods[0];
+        setAddFoodId(defaultFood.id);
+        setAddGrams(Math.max(5, Math.round((defaultFood.unit_default_g || 15) / 5) * 5));
+      } else {
+        setAddFoodId(0);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Không thể tải chi tiết thực đơn.");
     } finally {
@@ -194,9 +219,71 @@ export function ReviewPage({
   };
 
   const handleResetRows = () => {
-    setEditableRows((prev) => prev.map((r) => ({ ...r, grams: r.original_grams })));
+    setEditableRows(originalRowsSnapshot.map((r) => ({ ...r, grams: r.original_grams })));
     setDryRunResult(null);
     setDryRunFingerprint("");
+  };
+
+  const filteredAllowedFoods = useMemo(() => {
+    const q = addFoodSearch.trim().toLowerCase();
+    if (!q) return allowedFoods;
+    return allowedFoods.filter(
+      (f) =>
+        f.name_vi.toLowerCase().includes(q) ||
+        f.food_group.toLowerCase().includes(q) ||
+        f.code.toLowerCase().includes(q)
+    );
+  }, [allowedFoods, addFoodSearch]);
+
+  const handleSelectAddFood = (fid: number) => {
+    setAddFoodId(fid);
+    const found = allowedFoods.find((f) => f.id === fid);
+    if (found) {
+      setAddGrams(Math.max(5, Math.round((found.unit_default_g || 50) / 5) * 5));
+    }
+  };
+
+  const handleAddFoodItem = () => {
+    const targetFood =
+      filteredAllowedFoods.find((f) => f.id === addFoodId) ?? filteredAllowedFoods[0];
+    if (!targetFood) {
+      toast.error("Vui lòng chọn một món ăn hợp lệ từ danh mục an toàn.");
+      return;
+    }
+    const g = Math.max(5, Math.min(400, Math.round((Number(addGrams) || 15) / 5) * 5));
+    const mealOrder: Record<MealType, number> = {
+      breakfast: 0,
+      lunch: 1,
+      dinner: 2,
+      snack: 3,
+    };
+    setEditableRows((prev) => {
+      const existingIdx = prev.findIndex(
+        (r) => r.day === addDay && r.meal === addMeal && r.food_id === targetFood.id
+      );
+      let next: EditableRow[];
+      if (existingIdx >= 0) {
+        next = prev.map((r, i) =>
+          i === existingIdx ? { ...r, grams: Math.min(400, r.grams + g) } : r
+        );
+      } else {
+        next = [
+          ...prev,
+          {
+            day: addDay,
+            meal: addMeal,
+            food_id: targetFood.id,
+            name_vi: targetFood.name_vi,
+            original_grams: 0,
+            grams: g,
+          },
+        ];
+      }
+      return [...next].sort(
+        (a, b) => a.day - b.day || (mealOrder[a.meal] ?? 9) - (mealOrder[b.meal] ?? 9)
+      );
+    });
+    toast.success(`Đã thêm ${targetFood.name_vi} (${g}g) vào Ngày ${addDay} · ${formatMeal(addMeal)}.`);
   };
 
   const buildEditedPayload = useCallback(
@@ -317,10 +404,10 @@ export function ReviewPage({
         title="Thẩm định & điều chỉnh thực đơn"
         description="Kiểm duyệt các ca đang chờ, điều chỉnh định lượng từng món, chạy kiểm chứng 11 tiêu chí trước khi phê duyệt."
         rightSlot={
-          <span className="hidden lg:inline-flex items-center gap-1.5 rounded-xl border border-[#CDE6DF] bg-white/85 px-3 py-1.5 text-[11px] text-[#475569] shadow-2xs">
-            Phím tắt: <kbd className="rounded border border-[#D5E2DC] bg-[#F8FAF9] px-1 font-mono text-[10px]">J</kbd>/
-            <kbd className="rounded border border-[#D5E2DC] bg-[#F8FAF9] px-1 font-mono text-[10px]">K</kbd> đổi ca ·{" "}
-            <kbd className="rounded border border-[#D5E2DC] bg-[#F8FAF9] px-1 font-mono text-[10px]">Ctrl+Enter</kbd> kiểm chứng
+          <span className="hidden lg:inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] text-[#CCFBF1] backdrop-blur-md shadow-2xs">
+            Phím tắt: <kbd className="rounded border border-white/25 bg-white/14 px-1 font-mono text-[10px] text-white">J</kbd>/
+            <kbd className="rounded border border-white/25 bg-white/14 px-1 font-mono text-[10px] text-white">K</kbd> đổi ca ·{" "}
+            <kbd className="rounded border border-white/25 bg-white/14 px-1 font-mono text-[10px] text-white">Ctrl+Enter</kbd> kiểm chứng
           </span>
         }
       />
@@ -362,7 +449,7 @@ export function ReviewPage({
                 <motion.span
                   layoutId="review-filter-pill"
                   transition={TAB_SPRING}
-                  className="absolute inset-0 rounded-lg bg-gradient-to-r from-[#0B4F4A] via-[#0D9488] to-[#14B8A6] shadow-[0_4px_14px_rgba(13,148,136,0.28)]"
+                  className="absolute inset-0 rounded-lg bg-gradient-to-r from-[#0D9488] via-[#0EA5A8] to-[#06B6D4] shadow-[0_4px_14px_rgba(6,182,212,0.32)]"
                 />
               )}
               <span className="relative z-10">{tab.label}</span>
@@ -582,15 +669,36 @@ export function ReviewPage({
                 </CardContent>
               </Card>
 
-              {/* Guardrails / Review Note Alert */}
-              {(detail.guardrail_events.length > 0 || currentStatus === "needs_human_review") && (
+              {/* Guardrails / Violations / Review Note Alert */}
+              {((detail.violations && detail.violations.length > 0) ||
+                detail.guardrail_events.length > 0 ||
+                currentStatus === "needs_human_review") && (
                 <Card className="border-[#FDE68A] bg-gradient-to-r from-[#FFFBEB]/95 to-[#FEF3C7]/45">
-                  <CardContent className="p-4 space-y-2 text-xs">
+                  <CardContent className="p-4 space-y-2.5 text-xs">
                     <p className="flex items-center gap-1.5 font-bold text-[#92400E]">
                       <ShieldAlert className="h-4 w-4" />
-                      Lý do cần chuyên gia xem xét
+                      Lý do cần chuyên gia xem xét & Vi phạm kiểm chứng tự động
                     </p>
-                    {detail.guardrail_events.length > 0 ? (
+                    {detail.violations && detail.violations.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="font-semibold text-[#92400E]">
+                          Cảnh báo định lượng từ bộ kiểm chứng ({detail.violations.length}):
+                        </p>
+                        <ul className="space-y-1 text-[#78350F]">
+                          {detail.violations.map((v, idx) => (
+                            <li key={`${v.code}-${v.day ?? 0}-${idx}`}>
+                              •{" "}
+                              <span className="font-mono font-bold text-[#B45309]">
+                                [{v.code}]
+                              </span>{" "}
+                              <span className="font-semibold">{formatViolationCode(v.code)}:</span>{" "}
+                              {v.message_vi}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {detail.guardrail_events.length > 0 && (
                       <ul className="space-y-1 text-[#78350F]">
                         {detail.guardrail_events.map((ge) => (
                           <li key={ge.id}>
@@ -598,11 +706,13 @@ export function ReviewPage({
                           </li>
                         ))}
                       </ul>
-                    ) : (
-                      <p className="text-[#78350F]">
-                        Thực đơn chưa đạt hết ngưỡng kiểm chứng tự động. Cần chuyên gia kiểm tra kỹ định lượng trước khi phê duyệt.
-                      </p>
                     )}
+                    {(!detail.violations || detail.violations.length === 0) &&
+                      detail.guardrail_events.length === 0 && (
+                        <p className="text-[#78350F]">
+                          Thực đơn chưa đạt hết ngưỡng kiểm chứng tự động. Cần chuyên gia kiểm tra kỹ định lượng trước khi phê duyệt.
+                        </p>
+                      )}
                   </CardContent>
                 </Card>
               )}
@@ -613,7 +723,7 @@ export function ReviewPage({
                   <div className="min-w-0">
                     <CardTitle className="text-base">Điều chỉnh định lượng khẩu phần</CardTitle>
                     <p className="text-xs text-[#64748B]">
-                      Sửa số gram từng món (bước 5g; nhập 0 để bỏ món), sau đó chạy kiểm chứng lại.
+                      Sửa số gram từng món (bước 5g; nhập 0 để bỏ món) hoặc thêm món an toàn, sau đó chạy kiểm chứng lại.
                     </p>
                   </div>
                   {hasMenuItems && (
@@ -641,7 +751,120 @@ export function ReviewPage({
                     </div>
                   )}
                 </CardHeader>
-                <CardContent className="p-4">
+                <CardContent className="p-4 space-y-4">
+                  {canReviewAction && allowedFoods.length > 0 && (
+                    <div className="rounded-xl border border-[#CDE6DF] bg-[#F0FDFA]/70 p-3 space-y-2.5 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-bold text-[#0B4F4A]">
+                          + Bổ sung món ăn an toàn (đã lọc dị ứng, purin & nhóm cần tránh)
+                        </span>
+                        <span className="font-mono text-[11px] text-[#64748B]">
+                          {filteredAllowedFoods.length} / {allowedFoods.length} món phù hợp
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-12">
+                        <div className="sm:col-span-2">
+                          <Label className="text-[11px] text-[#475569]">Ngày</Label>
+                          <select
+                            aria-label="Chọn ngày thêm món"
+                            value={addDay}
+                            onChange={(e) => setAddDay(Number(e.target.value))}
+                            className="mt-1 h-8.5 w-full rounded-lg border border-[#D2E4DC] bg-white px-2 text-xs font-medium text-[#0F172A]"
+                          >
+                            {Array.from(
+                              { length: Math.max(1, detail.patient.days || 3) },
+                              (_, i) => i + 1
+                            ).map((d) => (
+                              <option key={d} value={d}>
+                                Ngày {d}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="sm:col-span-2">
+                          <Label className="text-[11px] text-[#475569]">Bữa ăn</Label>
+                          <select
+                            aria-label="Chọn bữa thêm món"
+                            value={addMeal}
+                            onChange={(e) => setAddMeal(e.target.value as MealType)}
+                            className="mt-1 h-8.5 w-full rounded-lg border border-[#D2E4DC] bg-white px-2 text-xs font-medium text-[#0F172A]"
+                          >
+                            <option value="breakfast">Bữa sáng</option>
+                            <option value="lunch">Bữa trưa</option>
+                            <option value="dinner">Bữa tối</option>
+                            <option value="snack">Bữa phụ</option>
+                          </select>
+                        </div>
+                        <div className="sm:col-span-2">
+                          <Label className="text-[11px] text-[#475569]">Lọc nhanh</Label>
+                          <Input
+                            value={addFoodSearch}
+                            onChange={(e) => {
+                              const nextQ = e.target.value;
+                              setAddFoodSearch(nextQ);
+                              const qLow = nextQ.trim().toLowerCase();
+                              const firstMatch = allowedFoods.find(
+                                (f) =>
+                                  !qLow ||
+                                  f.name_vi.toLowerCase().includes(qLow) ||
+                                  f.food_group.toLowerCase().includes(qLow)
+                              );
+                              if (firstMatch) handleSelectAddFood(firstMatch.id);
+                            }}
+                            placeholder="VD: dầu, bơ, cá..."
+                            className="mt-1 h-8.5 bg-white text-xs"
+                          />
+                        </div>
+                        <div className="sm:col-span-4">
+                          <Label className="text-[11px] text-[#475569]">
+                            Chọn món (100g: Kcal · Đạm/Béo/Carb)
+                          </Label>
+                          <select
+                            aria-label="Chọn thực phẩm an toàn"
+                            value={
+                              filteredAllowedFoods.some((f) => f.id === addFoodId)
+                                ? addFoodId
+                                : (filteredAllowedFoods[0]?.id ?? 0)
+                            }
+                            onChange={(e) => handleSelectAddFood(Number(e.target.value))}
+                            className="mt-1 h-8.5 w-full rounded-lg border border-[#D2E4DC] bg-white px-2 text-xs font-medium text-[#0F172A]"
+                          >
+                            {filteredAllowedFoods.map((f) => (
+                              <option key={f.id} value={f.id}>
+                                {f.name_vi} ({formatInt(f.kcal)}kcal · P{formatNumber(f.protein_g, 0)}/F
+                                {formatNumber(f.fat_g, 0)}/C{formatNumber(f.carb_g, 0)})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="sm:col-span-2 flex items-end gap-1.5">
+                          <div className="w-20">
+                            <Label className="text-[11px] text-[#475569]">Gram</Label>
+                            <Input
+                              type="number"
+                              min={5}
+                              max={400}
+                              step={5}
+                              value={addGrams}
+                              onChange={(e) => setAddGrams(Number(e.target.value))}
+                              className="mt-1 h-8.5 bg-white px-2 text-right font-mono text-xs"
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8.5 shrink-0 px-2.5"
+                            disabled={!filteredAllowedFoods.length || submitting}
+                            onClick={handleAddFoodItem}
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            Thêm
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {!hasMenuItems ? (
                     <p className="rounded-xl bg-[#FEF2F2] p-4 text-xs font-medium text-[#991B1B]">
                       Ca này chưa có món ăn để duyệt (do chưa lập được thực đơn hợp lệ hoặc đã bị chặn/chuyển hướng). Chuyên gia chỉ có thể từ chối và ghi rõ lý do.

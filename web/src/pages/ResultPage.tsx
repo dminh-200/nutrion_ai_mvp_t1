@@ -30,6 +30,7 @@ import { AnimatedNumber } from "@/components/ui/animated-number";
 import { Badge, statusBadgeVariant } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { InfoTip } from "@/components/ui/tooltip";
 import {
   classifyBmi,
@@ -249,7 +250,12 @@ export function ResultPage({
   const bmi = Number(targets.bmi ?? 0);
   const bmiInfo = classifyBmi(bmi);
 
-  const hasMenu = result.items.length > 0 && result.daily_totals.length > 0;
+  // Theo SPEC 3.2: ca needs_human_review chưa đạt kiểm chứng tự động nên không hiển thị
+  // thực đơn chưa kiểm chứng trên trang Kết quả; bản nháp được mở tại Bàn duyệt chuyên gia.
+  const hasMenu =
+    result.items.length > 0 &&
+    result.daily_totals.length > 0 &&
+    status !== "needs_human_review";
   const nDays = result.daily_totals.length || 1;
   const avgKcal = hasMenu
     ? result.daily_totals.reduce((s, d) => s + d.kcal, 0) / nDays
@@ -298,10 +304,10 @@ export function ResultPage({
             {result.meal_plan_id && onOpenChatWithPlan && (
               <Button
                 size="sm"
-                variant="outline"
+                variant="glassDark"
                 onClick={() => onOpenChatWithPlan(result.meal_plan_id!)}
               >
-                <MessageSquareHeart className="h-3.5 w-3.5 text-[#0D9488]" />
+                <MessageSquareHeart className="h-3.5 w-3.5 text-[#5EEAD4]" />
                 Hỏi Trợ lý về thực đơn này
               </Button>
             )}
@@ -319,37 +325,49 @@ export function ResultPage({
           <div className="flex flex-wrap items-center justify-between gap-2.5 text-xs">
             <div className="flex flex-wrap items-center gap-2">
               {passedAll11 ? (
-                <Badge variant="approved" className="gap-1.5 py-0.5 shadow-2xs">
-                  <ShieldCheck className="h-3.5 w-3.5" />
+                <Badge
+                  variant="approved"
+                  className="gap-1.5 border-[#34D399]/50 bg-[#059669]/28 py-0.5 text-[#D1FAE5] shadow-[0_0_16px_rgba(52,211,153,0.22)]"
+                >
+                  <ShieldCheck className="h-3.5 w-3.5 text-[#34D399]" />
                   Đạt 11/11 tiêu chí an toàn
                 </Badge>
               ) : isRejected ? (
-                <Badge variant="danger" className="gap-1.5 py-0.5 shadow-2xs">
-                  <AlertTriangle className="h-3.5 w-3.5" />
+                <Badge
+                  variant="danger"
+                  className="gap-1.5 border-[#FB7185]/50 bg-[#E11D48]/28 py-0.5 text-[#FFE4E6] shadow-2xs"
+                >
+                  <AlertTriangle className="h-3.5 w-3.5 text-[#FDA4AF]" />
                   Cần chuyên gia rà soát (Đã từ chối)
                 </Badge>
               ) : (
-                <Badge variant="pending" className="gap-1.5 py-0.5 shadow-2xs">
-                  <AlertTriangle className="h-3.5 w-3.5" />
+                <Badge
+                  variant="pending"
+                  className="gap-1.5 border-[#FBBF24]/50 bg-[#D97706]/28 py-0.5 text-[#FEF3C7] shadow-2xs"
+                >
+                  <AlertTriangle className="h-3.5 w-3.5 text-[#FCD34D]" />
                   Cần chuyên gia rà soát
                 </Badge>
               )}
 
               {hasMenu && (
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-[#CDE6DF] bg-white/85 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-[#0B4F4A] tabular-nums">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/22 bg-white/12 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-white tabular-nums backdrop-blur-xs">
                   {nDays} ngày · TB {formatInt(avgKcal)} / {formatInt(targets.target_kcal)} kcal
                   {kcalPct !== null ? ` (${kcalPct}%)` : ""}
                 </span>
               )}
 
               {needsList.map((n) => (
-                <Badge key={n} variant="default" className="bg-white/85">
+                <span
+                  key={n}
+                  className="inline-flex items-center rounded-full border border-[#5EEAD4]/35 bg-[#14B8A6]/18 px-2.5 py-0.5 text-[11px] font-semibold text-[#CCFBF1]"
+                >
                   {formatNeed(n)}
-                </Badge>
+                </span>
               ))}
             </div>
 
-            <span className="font-mono text-[11px] font-semibold text-[#64748B]">
+            <span className="font-mono text-[11px] font-semibold text-[#CCFBF1]/85">
               {result.retry_count === 0
                 ? "Đạt kiểm chứng lần đầu"
                 : `Số lần tinh chỉnh: ${result.retry_count}`}
@@ -381,7 +399,7 @@ export function ResultPage({
         </CardContent>
       </Card>
 
-      {/* 4 Luminous Elevated Clinical KPI Cards */}
+      {/* 4 Luminous Elevated Clinical KPI Cards (3 Spotlight Glass + 1 Dark-Emerald Signature Ring) */}
       <motion.div
         variants={STAGGER_CONTAINER}
         initial="hidden"
@@ -389,15 +407,15 @@ export function ResultPage({
         className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"
       >
         <motion.div variants={STAGGER_ITEM}>
-          <Card className="h-full overflow-hidden hover:-translate-y-0.5 hover:border-[#99D5C6] hover:shadow-[0_12px_28px_rgba(13,148,136,0.12)]">
-            <div className="h-[3px] w-full bg-gradient-to-r from-[#0B4F4A] to-[#14B8A6]" />
-            <CardContent className="p-4 sm:p-5">
+          <SpotlightCard className="h-full rounded-2xl border border-white/85 bg-white/78 backdrop-blur-2xl ring-1 ring-[#0D9488]/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_12px_30px_-6px_rgba(11,79,74,0.1)] transition-all duration-200 hover:-translate-y-0.5 hover:ring-[#14B8A6]/35 hover:shadow-[0_14px_32px_rgba(13,148,136,0.16)]">
+            <div className="h-[3px] w-full bg-gradient-to-r from-[#0D9488] to-[#06B6D4]" />
+            <div className="p-4 sm:p-5">
               <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#64748B]">
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#475569]">
                   Chỉ số BMI
                   <InfoTip text="Chỉ số khối cơ thể (kg/m²), phân loại theo ngưỡng IDI & WPRO dành cho người châu Á." />
                 </span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#0B4F4A] to-[#14B8A6] text-white shadow-[0_4px_10px_rgba(13,148,136,0.25)]">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#0D9488] to-[#06B6D4] text-white shadow-[0_4px_12px_rgba(6,182,212,0.3)]">
                   <Scale className="h-4 w-4" />
                 </span>
               </div>
@@ -405,20 +423,20 @@ export function ResultPage({
                 <AnimatedNumber value={bmi} formatter={(v) => formatNumber(v, 1)} />
               </p>
               <p className="mt-1 text-xs font-semibold text-[#0D9488]">{bmiInfo.label}</p>
-            </CardContent>
-          </Card>
+            </div>
+          </SpotlightCard>
         </motion.div>
 
         <motion.div variants={STAGGER_ITEM}>
-          <Card className="h-full overflow-hidden hover:-translate-y-0.5 hover:border-[#7DD3FC] hover:shadow-[0_12px_28px_rgba(2,132,199,0.12)]">
+          <SpotlightCard className="h-full rounded-2xl border border-white/85 bg-white/78 backdrop-blur-2xl ring-1 ring-[#0D9488]/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_12px_30px_-6px_rgba(11,79,74,0.1)] transition-all duration-200 hover:-translate-y-0.5 hover:ring-[#38BDF8]/45 hover:shadow-[0_14px_32px_rgba(2,132,199,0.16)]">
             <div className="h-[3px] w-full bg-gradient-to-r from-[#0284C7] to-[#38BDF8]" />
-            <CardContent className="p-4 sm:p-5">
+            <div className="p-4 sm:p-5">
               <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#64748B]">
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#475569]">
                   BMR (Cơ bản)
                   <InfoTip text="Tỷ lệ trao đổi chất cơ bản (Mifflin-St Jeor): năng lượng tối thiểu duy trì sự sống khi nghỉ ngơi hoàn toàn." />
                 </span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#0284C7] to-[#38BDF8] text-white shadow-[0_4px_10px_rgba(2,132,199,0.25)]">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#0284C7] to-[#38BDF8] text-white shadow-[0_4px_12px_rgba(2,132,199,0.28)]">
                   <Flame className="h-4 w-4" />
                 </span>
               </div>
@@ -427,20 +445,20 @@ export function ResultPage({
                 <span className="text-sm font-semibold text-[#64748B]">kcal</span>
               </p>
               <p className="mt-1 text-xs text-[#64748B]">Công thức Mifflin-St Jeor</p>
-            </CardContent>
-          </Card>
+            </div>
+          </SpotlightCard>
         </motion.div>
 
         <motion.div variants={STAGGER_ITEM}>
-          <Card className="h-full overflow-hidden hover:-translate-y-0.5 hover:border-[#FCD34D] hover:shadow-[0_12px_28px_rgba(217,119,6,0.12)]">
+          <SpotlightCard className="h-full rounded-2xl border border-white/85 bg-white/78 backdrop-blur-2xl ring-1 ring-[#0D9488]/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_12px_30px_-6px_rgba(11,79,74,0.1)] transition-all duration-200 hover:-translate-y-0.5 hover:ring-[#F59E0B]/40 hover:shadow-[0_14px_32px_rgba(217,119,6,0.16)]">
             <div className="h-[3px] w-full bg-gradient-to-r from-[#D97706] to-[#FBBF24]" />
-            <CardContent className="p-4 sm:p-5">
+            <div className="p-4 sm:p-5">
               <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#64748B]">
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#475569]">
                   TDEE (Tiêu hao)
                   <InfoTip text="Tổng năng lượng tiêu hao hằng ngày = BMR × hệ số mức độ vận động thể lực." />
                 </span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#D97706] to-[#F59E0B] text-white shadow-[0_4px_10px_rgba(217,119,6,0.25)]">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#D97706] to-[#F59E0B] text-white shadow-[0_4px_12px_rgba(217,119,6,0.28)]">
                   <Activity className="h-4 w-4" />
                 </span>
               </div>
@@ -449,32 +467,87 @@ export function ResultPage({
                 <span className="text-sm font-semibold text-[#64748B]">kcal</span>
               </p>
               <p className="mt-1 text-xs text-[#64748B]">Theo mức độ vận động</p>
-            </CardContent>
-          </Card>
+            </div>
+          </SpotlightCard>
         </motion.div>
 
         <motion.div variants={STAGGER_ITEM}>
-          <Card className="ambient-teal-card h-full overflow-hidden border-[#99D5C6] hover:-translate-y-0.5 hover:border-[#14B8A6] hover:shadow-[0_12px_30px_rgba(13,148,136,0.18)]">
-            <div className="h-[3px] w-full bg-gradient-to-r from-[#047857] via-[#0D9488] to-[#14B8A6]" />
-            <CardContent className="p-4 sm:p-5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#0B4F4A]">
+          <SpotlightCard
+            tone="dark"
+            className="dark-emerald-card h-full rounded-2xl text-white transition-transform duration-200 hover:-translate-y-0.5"
+          >
+            <div className="h-[3px] w-full bg-gradient-to-r from-[#2DD4BF] via-[#22D3EE] to-[#34D399]" />
+            <div className="flex h-full items-center justify-between gap-3 p-4 sm:p-5">
+              <div className="min-w-0">
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#99F6E4]">
                   Mục tiêu khẩu phần
-                  <InfoTip text="Mức năng lượng đích mỗi ngày đã điều chỉnh theo bệnh lý nền và sàn an toàn tối thiểu." />
+                  <InfoTip
+                    text="Mức năng lượng đích mỗi ngày đã điều chỉnh theo bệnh lý nền và sàn an toàn tối thiểu."
+                    className="text-[#99F6E4]/85 hover:bg-white/15 hover:text-white"
+                  />
                 </span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#0B4F4A] via-[#0D9488] to-[#14B8A6] text-white shadow-[0_4px_12px_rgba(13,148,136,0.3)]">
-                  <Target className="h-4 w-4" />
-                </span>
+                <p className="mt-1.5 font-mono text-2xl font-extrabold text-white tabular-nums leading-tight">
+                  <AnimatedNumber value={Number(targets.target_kcal ?? 0)} formatter={formatInt} />{" "}
+                  <span className="text-xs font-semibold text-[#CCFBF1]/80">kcal</span>
+                </p>
+                <p className="mt-1 text-[11px] font-medium text-[#CCFBF1]/80">
+                  Sàn ≥ {formatInt(targets.kcal_floor)} kcal/ngày
+                </p>
               </div>
-              <p className="mt-2 font-mono text-2xl font-extrabold text-[#0B4F4A] tabular-nums">
-                <AnimatedNumber value={Number(targets.target_kcal ?? 0)} formatter={formatInt} />{" "}
-                <span className="text-sm font-semibold">kcal/ngày</span>
-              </p>
-              <p className="mt-1 text-xs font-medium text-[#0D9488]">
-                Sàn tối thiểu ≥ {formatInt(targets.kcal_floor)} kcal
-              </p>
-            </CardContent>
-          </Card>
+
+              {hasMenu && kcalPct !== null ? (
+                <div
+                  className="relative flex h-16 w-16 shrink-0 items-center justify-center"
+                  title={`Thực đơn đạt ${kcalPct}% mục tiêu năng lượng`}
+                >
+                  <svg viewBox="0 0 64 64" className="h-16 w-16 -rotate-90">
+                    <defs>
+                      <linearGradient id="kcalRingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#22D3EE" />
+                        <stop offset="100%" stopColor="#34D399" />
+                      </linearGradient>
+                    </defs>
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="25"
+                      fill="none"
+                      stroke="rgba(255,255,255,0.16)"
+                      strokeWidth="5.5"
+                    />
+                    <circle
+                      cx="32"
+                      cy="32"
+                      r="25"
+                      fill="none"
+                      stroke="url(#kcalRingGrad)"
+                      strokeWidth="5.5"
+                      strokeLinecap="round"
+                      strokeDasharray={2 * Math.PI * 25}
+                      strokeDashoffset={
+                        2 * Math.PI * 25 * (1 - Math.min(100, Math.max(0, kcalPct)) / 100)
+                      }
+                      style={{
+                        filter: "drop-shadow(0 0 6px rgba(34, 211, 238, 0.7))",
+                      }}
+                    />
+                  </svg>
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+                    <span className="font-mono text-xs font-extrabold text-white tabular-nums leading-none">
+                      {kcalPct}%
+                    </span>
+                    <span className="text-[8.5px] font-semibold uppercase tracking-wide text-[#99F6E4]">
+                      đạt đích
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#5EEAD4]/40 bg-white/12 text-[#5EEAD4]">
+                  <Target className="h-5 w-5" />
+                </span>
+              )}
+            </div>
+          </SpotlightCard>
         </motion.div>
       </motion.div>
 

@@ -28,6 +28,23 @@ function AmbientBackdrop() {
       aria-hidden="true"
       className="pointer-events-none fixed inset-0 -z-10 overflow-hidden select-none"
     >
+      {/* 2 Slow-Drifting Aurora Orbs (18s ease-in-out infinite) */}
+      <div
+        className="aurora-orb-a absolute -left-24 -top-24 h-[460px] w-[460px] rounded-full blur-[96px] opacity-45"
+        style={{
+          background:
+            "radial-gradient(circle, rgba(34, 211, 238, 0.72) 0%, rgba(14, 165, 233, 0.22) 52%, transparent 74%)",
+        }}
+      />
+      <div
+        className="aurora-orb-b absolute -right-24 top-[22%] h-[500px] w-[500px] rounded-full blur-[104px] opacity-45"
+        style={{
+          background:
+            "radial-gradient(circle, rgba(52, 211, 153, 0.7) 0%, rgba(20, 184, 166, 0.24) 52%, transparent 74%)",
+        }}
+      />
+
+      {/* Subtle Clinical Wave Contours */}
       <svg
         className="h-full w-full opacity-[0.55]"
         viewBox="0 0 1440 900"
@@ -36,13 +53,13 @@ function AmbientBackdrop() {
       >
         <defs>
           <linearGradient id="waveStrokeA" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#14B8A6" stopOpacity="0.18" />
-            <stop offset="50%" stopColor="#0D9488" stopOpacity="0.08" />
-            <stop offset="100%" stopColor="#38BDF8" stopOpacity="0.16" />
+            <stop offset="0%" stopColor="#06B6D4" stopOpacity="0.28" />
+            <stop offset="50%" stopColor="#0D9488" stopOpacity="0.14" />
+            <stop offset="100%" stopColor="#34D399" stopOpacity="0.26" />
           </linearGradient>
           <linearGradient id="waveFillSoft" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#CCFBF1" stopOpacity="0.22" />
-            <stop offset="100%" stopColor="#E0F2FE" stopOpacity="0.06" />
+            <stop offset="0%" stopColor="#99F6E4" stopOpacity="0.26" />
+            <stop offset="100%" stopColor="#BAE6FD" stopOpacity="0.12" />
           </linearGradient>
         </defs>
         <path

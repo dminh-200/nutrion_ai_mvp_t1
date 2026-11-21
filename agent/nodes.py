@@ -248,6 +248,16 @@ def _persist_meal_plan(
         [v.model_dump() if hasattr(v, "model_dump") else dict(v) for v in violations],
         ensure_ascii=False,
     )
+    plan_llm = state.get("plan_llm")
+    if (
+        status not in ("redirect_to_doctor", "blocked")
+        and plan_llm is not None
+        and not plan_llm.cannot_plan
+        and plan_llm.days
+    ):
+        draft_plan_json = plan_llm.model_dump_json()
+    else:
+        draft_plan_json = "{}"
     passed_first_try = retry_count == 0 and not violations and status in (
         "pending_review",
         "approved",
@@ -294,9 +304,9 @@ def _persist_meal_plan(
                 risk_json=risk_json,
                 snippets_json=snippets_json,
                 violations_json=violations_json,
+                draft_plan_json=draft_plan_json,
             )
             assert plan_row is not None
-            plan_llm = state.get("plan_llm")
             if save_items and plan_llm is not None and not plan_llm.cannot_plan and plan_llm.days:
                 _save_plan_items(session, plan_row.id, plan_llm, gateway)
         else:
@@ -311,11 +321,11 @@ def _persist_meal_plan(
                 risk_json=risk_json,
                 snippets_json=snippets_json,
                 violations_json=violations_json,
+                draft_plan_json=draft_plan_json,
                 explanation_md=explanation_md,
                 retry_count=retry_count,
                 verifier_passed_first_try=passed_first_try,
             )
-            plan_llm = state.get("plan_llm")
             if save_items and plan_llm is not None and not plan_llm.cannot_plan and plan_llm.days:
                 _save_plan_items(session, plan_row.id, plan_llm, gateway)
 

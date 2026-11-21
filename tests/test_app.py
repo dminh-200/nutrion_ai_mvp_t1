@@ -461,3 +461,120 @@ def test_theme_config_exists() -> None:
     assert 'backgroundColor = "#F8FAFC"' in content
     assert 'secondaryBackgroundColor = "#FFFFFF"' in content
     assert 'textColor = "#0F172A"' in content
+
+
+def test_needs_human_review_draft_edit_and_allowed_foods_dal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ca needs_human_review giữ draft_plan_json, cho chuyên gia sửa/thêm món & duyệt."""
+    from uuid import uuid4
+
+    import db.session as db_session
+    from agent.graph import run_request
+    from config.settings import get_settings
+    from core.schemas import PatientProfile
+    from db.repo import get_allowed_foods_for_plan
+
+    db_file = tmp_path / "draft_hitl.db"
+    ckpt_file = tmp_path / "draft_hitl_ckpt.sqlite"
+    db_url = f"sqlite:///{db_file.as_posix()}"
+    monkeypatch.setenv("DB_URL", db_url)
+    monkeypatch.setenv("CHECKPOINT_DB", ckpt_file.as_posix())
+    monkeypatch.setenv("LLM_MODE", "mock")
+    monkeypatch.setenv("TOOLS_MODE", "direct")
+    get_settings.cache_clear()
+
+    old_engine = db_session._engine
+    old_factory = db_session._SessionLocal
+    engine = create_db_engine(db_url)
+    db_session._engine = engine
+    db_session._SessionLocal = None
+    ensure_db_ready(engine)
+
+    try:
+        profile = PatientProfile(
+            patient_code="P_DAL_DRAFT",
+            age=26,
+            sex="male",
+            height_cm=167.0,
+            weight_kg=86.0,
+            activity_level="light",
+            conditions=["htn"],
+            days=2,
+        )
+        res_exhausted = run_request(
+            profile,
+            thread_id=f"thread-dal-draft-{uuid4().hex[:8]}",
+            checkpoint_db=ckpt_file.as_posix(),
+            tools_mode="direct",
+            mock_force_violation="always",
+        )
+        assert res_exhausted["status"] == "needs_human_review"
+        plan_id = int(res_exhausted["meal_plan_id"])
+
+        with Session(engine) as sess:
+            official_items = list(
+                sess.scalars(
+                    select(MealPlanItem).where(MealPlanItem.meal_plan_id == plan_id)
+                ).all()
+            )
+            assert official_items == []
+
+            det = get_meal_plan_detail(plan_id, session=sess)
+            assert det is not None
+            assert len(det["items"]) > 0
+            assert len(det["violations"]) > 0
+
+            allowed = get_allowed_foods_for_plan(plan_id, query="dau", session=sess)
+            assert len(allowed) > 0
+
+        valid_res = run_request(
+            profile,
+            thread_id=f"thread-dal-valid-{uuid4().hex[:8]}",
+            checkpoint_db=ckpt_file.as_posix(),
+            tools_mode="direct",
+        )
+        valid_det = get_meal_plan_detail(int(valid_res["meal_plan_id"]))
+        assert valid_det is not None
+        edited_payload = [
+            {
+                "day": it["day"],
+                "meal": it["meal"],
+                "food_id": it["food_id"],
+                "grams": it["grams"],
+            }
+            for it in valid_det["items"]
+        ]
+
+        preview = preview_and_verify_edited_items(plan_id, edited_payload)
+        assert preview["is_valid"] is True
+
+        approved = record_review_for_finalized_plan(
+            meal_plan_id=plan_id,
+            reviewer_name="BS. Dinh dưỡng",
+            decision="edit",
+            note="Đã bổ sung dầu thực vật và cân chỉnh đủ chất béo.",
+            edited_items=edited_payload,
+        )
+        assert approved["status"] == "approved"
+
+        det_after = get_meal_plan_detail(plan_id)
+        assert det_after is not None
+        assert det_after["meal_plan"]["status"] == "approved"
+        assert det_after["violations"] == []
+        assert (
+            "Hệ thống chưa thể tự động hoàn tất thực đơn"
+            not in det_after["meal_plan"]["explanation_md"]
+        )
+        with Session(engine) as sess:
+            saved_items = list(
+                sess.scalars(
+                    select(MealPlanItem).where(MealPlanItem.meal_plan_id == plan_id)
+                ).all()
+            )
+            assert len(saved_items) == len(edited_payload)
+    finally:
+        engine.dispose()
+        db_session._engine = old_engine
+        db_session._SessionLocal = old_factory
+        get_settings.cache_clear()

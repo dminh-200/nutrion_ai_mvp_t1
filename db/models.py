@@ -162,6 +162,7 @@ class MealPlan(Base):
     risk_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
     snippets_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     violations_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    draft_plan_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
     explanation_md: Mapped[str] = mapped_column(Text, default="", nullable=False)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     verifier_passed_first_try: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

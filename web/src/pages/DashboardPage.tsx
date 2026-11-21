@@ -55,6 +55,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { Switch } from "@/components/ui/switch";
 import { InfoTip } from "@/components/ui/tooltip";
 import { apiClient } from "@/lib/api";
@@ -371,13 +372,16 @@ export function DashboardPage() {
         rightSlot={
           <div className="flex flex-wrap items-center gap-2">
             {includeSynthetic && (
-              <Badge variant="pending" className="shadow-2xs">
+              <Badge
+                variant="pending"
+                className="border-[#FBBF24]/50 bg-[#D97706]/28 text-[#FEF3C7] shadow-2xs"
+              >
                 Đang gồm dữ liệu log giả lập (seed)
               </Badge>
             )}
-            <Button asChild variant="outline" size="sm">
+            <Button asChild variant="glassDark" size="sm">
               <a href={csvUrl} download="query_logs_export.csv">
-                <Download className="h-3.5 w-3.5" />
+                <Download className="h-3.5 w-3.5 text-[#5EEAD4]" />
                 Xuất QueryLog (CSV)
               </a>
             </Button>
@@ -434,8 +438,8 @@ export function DashboardPage() {
                   className={cn(
                     "rounded-full border px-3.5 py-1 text-xs font-semibold transition-all cursor-pointer active:scale-[0.98]",
                     active
-                      ? "border-transparent bg-gradient-to-r from-[#0B4F4A] via-[#0D9488] to-[#14B8A6] text-white shadow-[0_4px_12px_rgba(13,148,136,0.28)]"
-                      : "border-[#D2E4DC] bg-white/90 text-[#334155] hover:border-[#14B8A6] hover:bg-[#F0FDFA]"
+                      ? "border-transparent bg-gradient-to-r from-[#0D9488] via-[#0EA5A8] to-[#06B6D4] text-white shadow-[0_4px_14px_rgba(6,182,212,0.32)]"
+                      : "border-[#CBE4DC] bg-white/85 text-[#334155] hover:border-[#06B6D4] hover:bg-[#ECFEFF]"
                   )}
                 >
                   {cf.label}
@@ -446,142 +450,235 @@ export function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* KPI Group 1: Clinical & Safety */}
+      {/* KPI Group 1: Asymmetric Bento Grid (Dark-Emerald Verifier Ring + Glass KPI Cluster) */}
       <div className="space-y-3">
         <h2 className="text-sm font-bold uppercase tracking-wider text-[#0B4F4A]">
           Chỉ số lâm sàng & An toàn y tế
         </h2>
         {isInitialLoading ? (
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-            {[1, 2, 3, 4].map((i) => (
-              <Skeleton key={i} className="h-[116px] w-full rounded-2xl" />
-            ))}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+            <Skeleton className="h-[246px] w-full rounded-2xl lg:col-span-5" />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:col-span-7">
+              <Skeleton className="h-[112px] w-full rounded-2xl sm:col-span-2" />
+              <Skeleton className="h-[118px] w-full rounded-2xl" />
+              <Skeleton className="h-[118px] w-full rounded-2xl" />
+            </div>
           </div>
         ) : (
           <motion.div
             variants={STAGGER_CONTAINER}
             initial="hidden"
             animate="show"
-            className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"
+            className="grid grid-cols-1 gap-4 lg:grid-cols-12"
           >
-            <motion.div variants={STAGGER_ITEM}>
-              <Card className="h-full overflow-hidden hover:-translate-y-0.5 hover:border-[#99D5C6] hover:shadow-[0_12px_28px_rgba(13,148,136,0.12)]">
-                <div className="h-[3px] w-full bg-gradient-to-r from-[#0B4F4A] to-[#14B8A6]" />
-                <CardContent className="p-4 flex h-full flex-col justify-between">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-[#64748B]">Tổng ca tư vấn</span>
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#0B4F4A] to-[#14B8A6] text-white shadow-[0_4px_10px_rgba(13,148,136,0.22)]">
-                      <Activity className="h-4 w-4" />
-                    </span>
-                  </div>
-                  <p className="mt-1.5 font-mono text-2xl font-extrabold text-[#0F172A] tabular-nums">
-                    <AnimatedNumber value={kpis?.total_requests ?? 0} formatter={formatInt} />
-                  </p>
-                  <p className="mt-1 text-[11px] text-[#64748B]">Theo bộ lọc hiện tại</p>
-                </CardContent>
-              </Card>
+            {/* Left Large Dark-Emerald Signature Card with Large Glowing SVG Ring */}
+            <motion.div variants={STAGGER_ITEM} className="lg:col-span-5">
+              {(() => {
+                const verifierPct = Math.max(
+                  0,
+                  Math.min(100, kpis?.first_pass_verifier_rate_pct ?? 0)
+                );
+                const ringR = 52;
+                const ringC = 2 * Math.PI * ringR;
+                const ringOffset = ringC * (1 - verifierPct / 100);
+                return (
+                  <SpotlightCard
+                    tone="dark"
+                    className="dark-emerald-card h-full rounded-2xl text-white"
+                  >
+                    <div className="h-[3px] w-full bg-gradient-to-r from-[#2DD4BF] via-[#22D3EE] to-[#34D399]" />
+                    <div className="flex h-full flex-col justify-between p-5 sm:p-6">
+                      <div className="flex flex-col items-start gap-1.5">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-[#5EEAD4]/35 bg-[#14B8A6]/18 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#CCFBF1]">
+                          <ShieldCheck className="h-3 w-3 text-[#2DD4BF]" />
+                          An toàn kiểm chứng
+                        </span>
+                        <h3 className="flex items-center gap-1.5 text-base font-extrabold text-white">
+                          Đạt Verifier lần đầu
+                          <InfoTip
+                            text="Tỷ lệ thực đơn vượt qua toàn bộ 11 tiêu chí kiểm chứng ngay ở lần đầu tiên mà không cần AI sinh lại."
+                            className="text-[#99F6E4]/85 hover:bg-white/15 hover:text-white"
+                          />
+                        </h3>
+                      </div>
+
+                      <div className="my-4 flex flex-col items-center gap-5 sm:flex-row">
+                        <div className="relative flex h-[132px] w-[132px] shrink-0 items-center justify-center">
+                          <svg viewBox="0 0 132 132" className="h-full w-full -rotate-90">
+                            <defs>
+                              <linearGradient id="dashVerifierRing" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stopColor="#22D3EE" />
+                                <stop offset="55%" stopColor="#2DD4BF" />
+                                <stop offset="100%" stopColor="#34D399" />
+                              </linearGradient>
+                            </defs>
+                            <circle
+                              cx="66"
+                              cy="66"
+                              r={ringR}
+                              fill="none"
+                              stroke="rgba(255,255,255,0.14)"
+                              strokeWidth="10"
+                            />
+                            <circle
+                              cx="66"
+                              cy="66"
+                              r={ringR}
+                              fill="none"
+                              stroke="url(#dashVerifierRing)"
+                              strokeWidth="10"
+                              strokeLinecap="round"
+                              strokeDasharray={ringC}
+                              strokeDashoffset={ringOffset}
+                              style={{
+                                transition: "stroke-dashoffset 550ms cubic-bezier(0.22, 1, 0.36, 1)",
+                                filter: "drop-shadow(0 0 10px rgba(34, 211, 238, 0.72))",
+                              }}
+                            />
+                          </svg>
+                          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+                            <span className="font-mono text-2xl font-extrabold text-white tabular-nums">
+                              <AnimatedNumber
+                                value={verifierPct}
+                                formatter={(v) => `${formatNumber(v, 1)}%`}
+                              />
+                            </span>
+                            <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#99F6E4]">
+                              1st-pass
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex-1 space-y-2.5 text-xs w-full">
+                          <div className="rounded-xl border border-white/14 bg-white/[0.07] px-3 py-2">
+                            <span className="text-[10.5px] text-[#99F6E4]/85">Vượt 11 tiêu chí ngay lần đầu</span>
+                            <p className="mt-0.5 font-semibold text-white">Không cần vòng lặp retry AI</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="rounded-xl border border-white/15 bg-white/[0.08] px-2.5 py-2">
+                              <span className="block text-[10px] text-[#CCFBF1]/85">Đã duyệt</span>
+                              <span className="font-mono text-sm font-extrabold text-[#6EE7B7] tabular-nums">
+                                {formatInt(kpis?.approved_count)}
+                              </span>
+                            </div>
+                            <div className="rounded-xl border border-white/15 bg-white/[0.08] px-2.5 py-2">
+                              <span className="block text-[10px] text-[#CCFBF1]/85">Bị chặn</span>
+                              <span className="font-mono text-sm font-extrabold text-[#FECDD3] tabular-nums">
+                                {formatInt(kpis?.blocked_count)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-[#CCFBF1]/75">
+                        Đo lường độ chính xác của lớp kiểm chứng định lượng &amp; an toàn lâm sàng.
+                      </p>
+                    </div>
+                  </SpotlightCard>
+                );
+              })()}
             </motion.div>
 
-            <motion.div variants={STAGGER_ITEM}>
-              <Card className="h-full overflow-hidden hover:-translate-y-0.5 hover:border-[#6EE7B7] hover:shadow-[0_12px_28px_rgba(16,185,129,0.12)]">
-                <div className="h-[3px] w-full bg-gradient-to-r from-[#047857] to-[#10B981]" />
-                <CardContent className="p-4 flex h-full flex-col justify-between">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-[#64748B]">Tỷ lệ phê duyệt</span>
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#059669] to-[#10B981] text-white shadow-[0_4px_10px_rgba(16,185,129,0.22)]">
-                      <CheckCircle2 className="h-4 w-4" />
-                    </span>
-                  </div>
-                  <p className="mt-1.5 font-mono text-2xl font-extrabold text-[#059669] tabular-nums">
-                    <AnimatedNumber
-                      value={kpis?.approval_rate_pct ?? 0}
-                      formatter={(v) => `${formatNumber(v, 1)}%`}
-                    />
-                  </p>
-                  <div className="mt-1.5 space-y-1">
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#E8F2ED]">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-[#059669] to-[#34D399]"
-                        style={{ width: `${Math.min(100, kpis?.approval_rate_pct ?? 0)}%` }}
-                      />
+            {/* Right Glass KPI Cluster (Bento 1-wide + 2-half) */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:col-span-7">
+              <motion.div variants={STAGGER_ITEM} className="sm:col-span-2">
+                <SpotlightCard className="h-full rounded-2xl border border-white/85 bg-white/78 backdrop-blur-2xl ring-1 ring-[#0D9488]/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_12px_30px_-6px_rgba(11,79,74,0.1)] transition-all duration-200 hover:-translate-y-0.5 hover:ring-[#06B6D4]/35 hover:shadow-[0_14px_32px_rgba(6,182,212,0.15)]">
+                  <div className="h-[3px] w-full bg-gradient-to-r from-[#0D9488] via-[#0EA5A8] to-[#06B6D4]" />
+                  <div className="flex flex-col justify-between gap-3 p-5 sm:flex-row sm:items-center">
+                    <div>
+                      <span className="text-xs font-semibold text-[#475569]">Tổng ca tư vấn</span>
+                      <p className="mt-1 font-mono text-3xl font-extrabold text-[#0F172A] tabular-nums">
+                        <AnimatedNumber value={kpis?.total_requests ?? 0} formatter={formatInt} />
+                      </p>
+                      <p className="mt-0.5 text-xs text-[#64748B]">
+                        Tổng hợp theo khoảng ngày &amp; bộ lọc bệnh lý hiện tại
+                      </p>
                     </div>
-                    <p className="text-[11px] text-[#64748B]">
-                      {formatInt(kpis?.approved_count)} ca đã duyệt
+                    <div className="flex items-center gap-2.5">
+                      <div className="rounded-xl border border-[#D4E8E0] bg-white/80 px-3 py-2 text-right">
+                        <span className="block text-[10px] font-semibold uppercase text-[#64748B]">
+                          Chờ duyệt
+                        </span>
+                        <span className="font-mono text-sm font-extrabold text-[#D97706] tabular-nums">
+                          {formatInt(kpis?.pending_count)}
+                        </span>
+                      </div>
+                      <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-[#0D9488] to-[#06B6D4] text-white shadow-[0_6px_16px_rgba(6,182,212,0.3)]">
+                        <Activity className="h-5 w-5" />
+                      </span>
+                    </div>
+                  </div>
+                </SpotlightCard>
+              </motion.div>
+
+              <motion.div variants={STAGGER_ITEM}>
+                <SpotlightCard className="h-full rounded-2xl border border-white/85 bg-white/78 backdrop-blur-2xl ring-1 ring-[#0D9488]/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_12px_30px_-6px_rgba(11,79,74,0.1)] transition-all duration-200 hover:-translate-y-0.5 hover:ring-[#10B981]/40 hover:shadow-[0_14px_32px_rgba(16,185,129,0.15)]">
+                  <div className="h-[3px] w-full bg-gradient-to-r from-[#047857] to-[#10B981]" />
+                  <div className="flex h-full flex-col justify-between p-4 sm:p-5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-[#475569]">Tỷ lệ phê duyệt</span>
+                      <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#059669] to-[#10B981] text-white shadow-[0_4px_12px_rgba(16,185,129,0.26)]">
+                        <CheckCircle2 className="h-4 w-4" />
+                      </span>
+                    </div>
+                    <p className="mt-2 font-mono text-2xl font-extrabold text-[#059669] tabular-nums">
+                      <AnimatedNumber
+                        value={kpis?.approval_rate_pct ?? 0}
+                        formatter={(v) => `${formatNumber(v, 1)}%`}
+                      />
                     </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            <motion.div variants={STAGGER_ITEM}>
-              <Card className="h-full overflow-hidden hover:-translate-y-0.5 hover:border-[#7DD3FC] hover:shadow-[0_12px_28px_rgba(2,132,199,0.12)]">
-                <div className="h-[3px] w-full bg-gradient-to-r from-[#0284C7] to-[#38BDF8]" />
-                <CardContent className="p-4 flex h-full flex-col justify-between">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-[#64748B]">Chuyển hướng bác sĩ</span>
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#0284C7] to-[#38BDF8] text-white shadow-[0_4px_10px_rgba(2,132,199,0.22)]">
-                      <Stethoscope className="h-4 w-4" />
-                    </span>
-                  </div>
-                  <p className="mt-1.5 font-mono text-2xl font-extrabold text-[#0284C7] tabular-nums">
-                    <AnimatedNumber
-                      value={kpis?.redirect_rate_pct ?? 0}
-                      formatter={(v) => `${formatNumber(v, 1)}%`}
-                    />
-                  </p>
-                  <div className="mt-1.5 space-y-1">
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#E8F2F8]">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-[#0284C7] to-[#38BDF8]"
-                        style={{ width: `${Math.min(100, kpis?.redirect_rate_pct ?? 0)}%` }}
-                      />
+                    <div className="mt-2 space-y-1">
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#E2F0EA]">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-[#059669] to-[#34D399]"
+                          style={{ width: `${Math.min(100, kpis?.approval_rate_pct ?? 0)}%` }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-[#64748B]">
+                        {formatInt(kpis?.approved_count)} ca đã duyệt
+                      </p>
                     </div>
-                    <p className="text-[11px] text-[#64748B]">
-                      {formatInt(kpis?.redirect_count)} ca nguy cơ cao
+                  </div>
+                </SpotlightCard>
+              </motion.div>
+
+              <motion.div variants={STAGGER_ITEM}>
+                <SpotlightCard className="h-full rounded-2xl border border-white/85 bg-white/78 backdrop-blur-2xl ring-1 ring-[#0D9488]/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_12px_30px_-6px_rgba(11,79,74,0.1)] transition-all duration-200 hover:-translate-y-0.5 hover:ring-[#38BDF8]/45 hover:shadow-[0_14px_32px_rgba(2,132,199,0.15)]">
+                  <div className="h-[3px] w-full bg-gradient-to-r from-[#0284C7] to-[#38BDF8]" />
+                  <div className="flex h-full flex-col justify-between p-4 sm:p-5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-[#475569]">Chuyển hướng bác sĩ</span>
+                      <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#0284C7] to-[#38BDF8] text-white shadow-[0_4px_12px_rgba(2,132,199,0.26)]">
+                        <Stethoscope className="h-4 w-4" />
+                      </span>
+                    </div>
+                    <p className="mt-2 font-mono text-2xl font-extrabold text-[#0284C7] tabular-nums">
+                      <AnimatedNumber
+                        value={kpis?.redirect_rate_pct ?? 0}
+                        formatter={(v) => `${formatNumber(v, 1)}%`}
+                      />
                     </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            <motion.div variants={STAGGER_ITEM}>
-              <Card className="h-full overflow-hidden hover:-translate-y-0.5 hover:border-[#5EEAD4] hover:shadow-[0_12px_28px_rgba(20,184,166,0.14)]">
-                <div className="h-[3px] w-full bg-gradient-to-r from-[#0D9488] to-[#2DD4BF]" />
-                <CardContent className="p-4 flex h-full flex-col justify-between">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#64748B]">
-                      Đạt verifier lần đầu
-                      <InfoTip text="Tỷ lệ thực đơn vượt qua toàn bộ 11 tiêu chí kiểm chứng ngay ở lần đầu tiên mà không cần AI sinh lại." />
-                    </span>
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#0D9488] to-[#14B8A6] text-white shadow-[0_4px_10px_rgba(20,184,166,0.24)]">
-                      <ShieldCheck className="h-4 w-4" />
-                    </span>
-                  </div>
-                  <p className="mt-1.5 font-mono text-2xl font-extrabold text-[#0B4F4A] tabular-nums">
-                    <AnimatedNumber
-                      value={kpis?.first_pass_verifier_rate_pct ?? 0}
-                      formatter={(v) => `${formatNumber(v, 1)}%`}
-                    />
-                  </p>
-                  <div className="mt-1.5 space-y-1">
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#E8F2ED]">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-[#0B4F4A] to-[#14B8A6]"
-                        style={{
-                          width: `${Math.min(100, kpis?.first_pass_verifier_rate_pct ?? 0)}%`,
-                        }}
-                      />
+                    <div className="mt-2 space-y-1">
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#E2EFF7]">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-[#0284C7] to-[#38BDF8]"
+                          style={{ width: `${Math.min(100, kpis?.redirect_rate_pct ?? 0)}%` }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-[#64748B]">
+                        {formatInt(kpis?.redirect_count)} ca nguy cơ cao
+                      </p>
                     </div>
-                    <p className="text-[11px] text-[#64748B]">Không cần vòng retry</p>
                   </div>
-                </CardContent>
-              </Card>
-            </motion.div>
+                </SpotlightCard>
+              </motion.div>
+            </div>
           </motion.div>
         )}
       </div>
 
-      {/* KPI Group 2: Performance & Cost */}
+      {/* KPI Group 2: Performance & Cost (Spotlight Glass Cards) */}
       <div className="space-y-3">
         <h2 className="text-sm font-bold uppercase tracking-wider text-[#475569]">
           Hiệu năng vận hành & Chi phí
@@ -600,11 +697,11 @@ export function DashboardPage() {
             className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"
           >
             <motion.div variants={STAGGER_ITEM}>
-              <Card className="h-full overflow-hidden hover:-translate-y-0.5 hover:border-[#94A3B8]/60 hover:shadow-[0_12px_24px_rgba(15,23,42,0.07)]">
+              <SpotlightCard className="h-full rounded-2xl border border-white/85 bg-white/78 backdrop-blur-2xl ring-1 ring-[#0D9488]/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_12px_28px_-6px_rgba(11,79,74,0.09)] transition-all duration-200 hover:-translate-y-0.5 hover:ring-[#64748B]/35">
                 <div className="h-[3px] w-full bg-gradient-to-r from-[#334155] to-[#64748B]" />
-                <CardContent className="p-4">
+                <div className="p-4">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-[#64748B]">Độ trễ trung bình</span>
+                    <span className="text-xs font-semibold text-[#475569]">Độ trễ trung bình</span>
                     <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#334155] to-[#64748B] text-white shadow-2xs">
                       <Clock className="h-4 w-4" />
                     </span>
@@ -614,20 +711,20 @@ export function DashboardPage() {
                     <span className="text-xs font-semibold text-[#64748B]">ms</span>
                   </p>
                   <p className="mt-1 text-[11px] text-[#64748B]">Trung bình toàn luồng xử lý</p>
-                </CardContent>
-              </Card>
+                </div>
+              </SpotlightCard>
             </motion.div>
 
             <motion.div variants={STAGGER_ITEM}>
-              <Card className="h-full overflow-hidden hover:-translate-y-0.5 hover:border-[#FCD34D] hover:shadow-[0_12px_24px_rgba(217,119,6,0.12)]">
+              <SpotlightCard className="h-full rounded-2xl border border-white/85 bg-white/78 backdrop-blur-2xl ring-1 ring-[#0D9488]/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_12px_28px_-6px_rgba(11,79,74,0.09)] transition-all duration-200 hover:-translate-y-0.5 hover:ring-[#F59E0B]/40">
                 <div className="h-[3px] w-full bg-gradient-to-r from-[#D97706] to-[#FBBF24]" />
-                <CardContent className="p-4">
+                <div className="p-4">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#64748B]">
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#475569]">
                       Độ trễ P95
                       <InfoTip text="Phân vị thứ 95: 95% số yêu cầu hoàn tất nhanh hơn hoặc bằng ngưỡng thời gian này." />
                     </span>
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#D97706] to-[#F59E0B] text-white shadow-[0_4px_10px_rgba(217,119,6,0.22)]">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#D97706] to-[#F59E0B] text-white shadow-[0_4px_10px_rgba(217,119,6,0.24)]">
                       <Gauge className="h-4 w-4" />
                     </span>
                   </div>
@@ -636,17 +733,17 @@ export function DashboardPage() {
                     <span className="text-xs font-semibold text-[#64748B]">ms</span>
                   </p>
                   <p className="mt-1 text-[11px] text-[#64748B]">Ngưỡng 95% yêu cầu nhanh nhất</p>
-                </CardContent>
-              </Card>
+                </div>
+              </SpotlightCard>
             </motion.div>
 
             <motion.div variants={STAGGER_ITEM}>
-              <Card className="h-full overflow-hidden hover:-translate-y-0.5 hover:border-[#67E8F9] hover:shadow-[0_12px_24px_rgba(14,116,144,0.12)]">
+              <SpotlightCard className="h-full rounded-2xl border border-white/85 bg-white/78 backdrop-blur-2xl ring-1 ring-[#0D9488]/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_12px_28px_-6px_rgba(11,79,74,0.09)] transition-all duration-200 hover:-translate-y-0.5 hover:ring-[#06B6D4]/45">
                 <div className="h-[3px] w-full bg-gradient-to-r from-[#0E7490] to-[#22D3EE]" />
-                <CardContent className="p-4">
+                <div className="p-4">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-[#64748B]">Tổng token sử dụng</span>
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#0E7490] to-[#06B6D4] text-white shadow-[0_4px_10px_rgba(6,182,212,0.22)]">
+                    <span className="text-xs font-semibold text-[#475569]">Tổng token sử dụng</span>
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#0E7490] to-[#06B6D4] text-white shadow-[0_4px_10px_rgba(6,182,212,0.24)]">
                       <Cpu className="h-4 w-4" />
                     </span>
                   </div>
@@ -654,17 +751,17 @@ export function DashboardPage() {
                     <AnimatedNumber value={kpis?.total_tokens ?? 0} formatter={formatInt} />
                   </p>
                   <p className="mt-1 text-[11px] text-[#64748B]">Gồm prompt + completion tokens</p>
-                </CardContent>
-              </Card>
+                </div>
+              </SpotlightCard>
             </motion.div>
 
             <motion.div variants={STAGGER_ITEM}>
-              <Card className="h-full overflow-hidden hover:-translate-y-0.5 hover:border-[#6EE7B7] hover:shadow-[0_12px_24px_rgba(5,150,105,0.12)]">
+              <SpotlightCard className="h-full rounded-2xl border border-white/85 bg-white/78 backdrop-blur-2xl ring-1 ring-[#0D9488]/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_12px_28px_-6px_rgba(11,79,74,0.09)] transition-all duration-200 hover:-translate-y-0.5 hover:ring-[#10B981]/40">
                 <div className="h-[3px] w-full bg-gradient-to-r from-[#059669] to-[#34D399]" />
-                <CardContent className="p-4">
+                <div className="p-4">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-[#64748B]">Chi phí ước tính</span>
-                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#059669] to-[#10B981] text-white shadow-[0_4px_10px_rgba(5,150,105,0.22)]">
+                    <span className="text-xs font-semibold text-[#475569]">Chi phí ước tính</span>
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#059669] to-[#10B981] text-white shadow-[0_4px_10px_rgba(5,150,105,0.24)]">
                       <Coins className="h-4 w-4" />
                     </span>
                   </div>
@@ -676,8 +773,8 @@ export function DashboardPage() {
                     />
                   </p>
                   <p className="mt-1 text-[11px] text-[#64748B]">Quy đổi USD theo log mô hình</p>
-                </CardContent>
-              </Card>
+                </div>
+              </SpotlightCard>
             </motion.div>
           </motion.div>
         )}

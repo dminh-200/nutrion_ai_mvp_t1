@@ -413,3 +413,108 @@ def test_f11_f12_f13_f14_detail_dashboard_and_vi_validation(api_client: TestClie
     log_sids = {row["session_id"] for row in r_dash_t2d.json()["logs"]}
     assert sess_t2d in log_sids
     assert sess_htn not in log_sids
+
+
+def test_needs_human_review_draft_edit_and_allowed_foods_flow(api_client: TestClient) -> None:
+    """Ca needs_human_review giữ bản nháp ở draft_plan_json, cho phép thêm món & duyệt."""
+    from uuid import uuid4
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
+    from agent.graph import run_request
+    from core.schemas import PatientProfile
+    from db.models import MealPlanItem
+    from db.session import get_engine
+
+    profile = PatientProfile(
+        patient_code="P_API_DRAFT_FIX",
+        age=26,
+        sex="male",
+        height_cm=167.0,
+        weight_kg=86.0,
+        activity_level="light",
+        conditions=["htn"],
+        days=2,
+    )
+    res_exhausted = run_request(
+        profile,
+        thread_id=f"thread-draft-fix-{uuid4().hex[:8]}",
+        tools_mode="direct",
+        mock_force_violation="always",
+    )
+    assert res_exhausted["status"] == "needs_human_review"
+    plan_id = int(res_exhausted["meal_plan_id"])
+
+    # Bảng meal_plan_item chính thức vẫn rỗng khi đang needs_human_review (SPEC 3.2)
+    with Session(get_engine()) as sess:
+        official_items = list(
+            sess.scalars(
+                select(MealPlanItem).where(MealPlanItem.meal_plan_id == plan_id)
+            ).all()
+        )
+        assert official_items == []
+
+    # Bàn duyệt chuyên gia lấy được chi tiết bản nháp + danh sách vi phạm + danh sách món an toàn
+    r_det = api_client.get(f"/api/meal-plans/{plan_id}")
+    assert r_det.status_code == 200
+    det = r_det.json()
+    assert det["meal_plan"]["status"] == "needs_human_review"
+    assert len(det["items"]) > 0
+    assert len(det["violations"]) > 0
+
+    r_foods = api_client.get(f"/api/reviews/{plan_id}/allowed-foods?q=dau")
+    assert r_foods.status_code == 200
+    foods = r_foods.json()["foods"]
+    assert len(foods) > 0
+
+    # Tạo thực đơn hợp lệ thông qua run_request bình thường để lấy bộ edited_items đạt 100% verifier
+    valid_res = run_request(
+        profile,
+        thread_id=f"thread-valid-ref-{uuid4().hex[:8]}",
+        tools_mode="direct",
+    )
+    valid_det = api_client.get(f"/api/meal-plans/{int(valid_res['meal_plan_id'])}").json()
+    valid_edit_payload = [
+        {
+            "day": it["day"],
+            "meal": it["meal"],
+            "food_id": it["food_id"],
+            "grams": it["grams"],
+        }
+        for it in valid_det["items"]
+    ]
+
+    r_prev = api_client.post(
+        f"/api/reviews/{plan_id}/preview-edit",
+        json={"edited_items": valid_edit_payload},
+    )
+    assert r_prev.status_code == 200
+    assert r_prev.json()["is_valid"] is True
+
+    r_sub = api_client.post(
+        f"/api/reviews/{plan_id}/submit",
+        json={
+            "decision": "edit",
+            "reviewer_name": "BS. Dinh dưỡng",
+            "note": "Đã bổ sung dầu ô liu và cân chỉnh đủ chất béo lành mạnh.",
+            "edited_items": valid_edit_payload,
+        },
+    )
+    assert r_sub.status_code == 200
+    sub_body = r_sub.json()
+    assert sub_body["status"] == "approved"
+    assert sub_body["detail"]["meal_plan"]["status"] == "approved"
+    assert sub_body["detail"]["violations"] == []
+    assert (
+        "Hệ thống chưa thể tự động hoàn tất thực đơn"
+        not in sub_body["detail"]["meal_plan"]["explanation_md"]
+    )
+
+    with Session(get_engine()) as sess:
+        approved_items = list(
+            sess.scalars(
+                select(MealPlanItem).where(MealPlanItem.meal_plan_id == plan_id)
+            ).all()
+        )
+        assert len(approved_items) == len(valid_edit_payload)
